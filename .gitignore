@@ -1,0 +1,102 @@
+# ==========================================
+# Python, Virtual Environments & Cache
+# ==========================================
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+backend/.venv/
+.pytest_cache/
+**/.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.eggs/
+
+# ==========================================
+# Node.js & Frontend Build Outputs
+# ==========================================
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+.vite/
+**/.vite/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================================
+# Databases & Local Data Storage
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+mirage_dev.db
+backend/mirage_dev.db
+storage/
+backend/storage/
+uploads/
+backend/uploads/
+temp_execution/
+backend/temp_execution/
+mirage_workspaces/
+backend/mirage_workspaces/
+
+# ==========================================
+# Secrets, Keys & Environment Variables
+# ==========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+
+# ==========================================
+# Temporary Files, Clones & Scratch Tests
+# ==========================================
+*.zip
+*.tar.gz
+*.tgz
+scratch*
+**/scratch*
+test_repo*
+**/test_repo*
+scratch_test_clone*
+**/scratch_test_clone*
+
+# ==========================================
+# IDEs, Editors & Operating System Metadata
+# ==========================================
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
