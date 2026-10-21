@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -13,6 +11,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mirage-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mirage_user -d mirage_db"]
       interval: 5s
@@ -27,12 +27,273 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - mirage-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: mirage-auth-service
+    restart: always
+    environment:
+      - SERVICE_NAME=auth-service
+      - PORT=8001
+      - DATABASE_URL=postgresql+psycopg2://mirage_user:mirage_password@postgres:5432/mirage_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mirage-network
+
+  project-service:
+    build:
+      context: .
+      dockerfile: services/project-service/Dockerfile
+    container_name: mirage-project-service
+    restart: always
+    environment:
+      - SERVICE_NAME=project-service
+      - PORT=8002
+      - DATABASE_URL=postgresql+psycopg2://mirage_user:mirage_password@postgres:5432/mirage_db
+      - REDIS_URL=redis://redis:6379/0
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - FILE_SERVICE_URL=http://file-service:8003
+      - COLLABORATION_SERVICE_URL=http://collaboration-service:8007
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+    networks:
+      - mirage-network
+
+  file-service:
+    build:
+      context: .
+      dockerfile: services/file-service/Dockerfile
+    container_name: mirage-file-service
+    restart: always
+    environment:
+      - SERVICE_NAME=file-service
+      - PORT=8003
+      - DATABASE_URL=postgresql+psycopg2://mirage_user:mirage_password@postgres:5432/mirage_db
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - USE_LOCAL_STORAGE=true
+      - LOCAL_STORAGE_PATH=/storage
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    volumes:
+      - storage_data:/storage
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mirage-network
+
+  import-service:
+    build:
+      context: .
+      dockerfile: services/import-service/Dockerfile
+    container_name: mirage-import-service
+    restart: always
+    environment:
+      - SERVICE_NAME=import-service
+      - PORT=8004
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - FILE_SERVICE_URL=http://file-service:8003
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    ports:
+      - "8004:8004"
+    depends_on:
+      - project-service
+      - file-service
+    networks:
+      - mirage-network
+
+  execution-service:
+    build:
+      context: .
+      dockerfile: services/execution-service/Dockerfile
+    container_name: mirage-execution-service
+    restart: always
+    environment:
+      - SERVICE_NAME=execution-service
+      - PORT=8005
+      - DATABASE_URL=postgresql+psycopg2://mirage_user:mirage_password@postgres:5432/mirage_db
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - FILE_SERVICE_URL=http://file-service:8003
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mirage-network
+
+  terminal-service:
+    build:
+      context: .
+      dockerfile: services/terminal-service/Dockerfile
+    container_name: mirage-terminal-service
+    restart: always
+    environment:
+      - SERVICE_NAME=terminal-service
+      - PORT=8006
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - FILE_SERVICE_URL=http://file-service:8003
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    ports:
+      - "8006:8006"
+    depends_on:
+      - project-service
+      - file-service
+    networks:
+      - mirage-network
+
+  collaboration-service:
+    build:
+      context: .
+      dockerfile: services/collaboration-service/Dockerfile
+    container_name: mirage-collaboration-service
+    restart: always
+    environment:
+      - SERVICE_NAME=collaboration-service
+      - PORT=8007
+      - REDIS_URL=redis://redis:6379/0
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    ports:
+      - "8007:8007"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - mirage-network
+
+  chat-service:
+    build:
+      context: .
+      dockerfile: services/chat-service/Dockerfile
+    container_name: mirage-chat-service
+    restart: always
+    environment:
+      - SERVICE_NAME=chat-service
+      - PORT=8008
+      - DATABASE_URL=postgresql+psycopg2://mirage_user:mirage_password@postgres:5432/mirage_db
+      - REDIS_URL=redis://redis:6379/0
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    ports:
+      - "8008:8008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mirage-network
+
+  history-service:
+    build:
+      context: .
+      dockerfile: services/history-service/Dockerfile
+    container_name: mirage-history-service
+    restart: always
+    environment:
+      - SERVICE_NAME=history-service
+      - PORT=8009
+      - DATABASE_URL=postgresql+psycopg2://mirage_user:mirage_password@postgres:5432/mirage_db
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - FILE_SERVICE_URL=http://file-service:8003
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - USE_LOCAL_STORAGE=true
+      - LOCAL_STORAGE_PATH=/storage
+      - SECRET_KEY=mirage_super_secret_jwt_key_dev_mode_only_2026
+    volumes:
+      - storage_data:/storage
+    ports:
+      - "8009:8009"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mirage-network
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: mirage-api-gateway
+    restart: always
+    environment:
+      - SERVICE_NAME=api-gateway
+      - PORT=8000
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - PROJECT_SERVICE_URL=http://project-service:8002
+      - FILE_SERVICE_URL=http://file-service:8003
+      - IMPORT_SERVICE_URL=http://import-service:8004
+      - EXECUTION_SERVICE_URL=http://execution-service:8005
+      - TERMINAL_SERVICE_URL=http://terminal-service:8006
+      - COLLABORATION_SERVICE_URL=http://collaboration-service:8007
+      - COLLABORATION_SERVICE_WS_URL=ws://collaboration-service:8007
+      - CHAT_SERVICE_URL=http://chat-service:8008
+      - CHAT_SERVICE_WS_URL=ws://chat-service:8008
+      - HISTORY_SERVICE_URL=http://history-service:8009
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth-service
+      - project-service
+      - file-service
+      - import-service
+      - execution-service
+      - terminal-service
+      - collaboration-service
+      - chat-service
+      - history-service
+    networks:
+      - mirage-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mirage-frontend
+    restart: always
+    environment:
+      - VITE_API_GATEWAY_URL=http://api-gateway:8000
+      - VITE_API_GATEWAY_WS_URL=ws://api-gateway:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-gateway
+    networks:
+      - mirage-network
+
 volumes:
   postgres_data:
   redis_data:
+  storage_data:
+
+networks:
+  mirage-network:
+    driver: bridge
