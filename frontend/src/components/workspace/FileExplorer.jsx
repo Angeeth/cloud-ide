@@ -28,7 +28,7 @@ function TreeNode({ node, level = 0 }) {
     if (window.confirm(`Delete ${node.name}?`)) {
       try {
         await api.delete(`/files/${node.id}`);
-        refreshFilesTree();
+        await refreshFilesTree(true);
       } catch (err) {
         alert('Failed to delete file');
       }
@@ -107,19 +107,24 @@ export default function FileExplorer({ onOpenUploadModal }) {
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    if (!newItemName.trim() || !project) return;
+    const rawInput = newItemName.trim();
+    if (!rawInput || !project) return;
     
     try {
-      const fullPath = newItemName.trim();
+      // Strip leading and trailing slashes so path and name are clean
+      const cleanPath = rawInput.replace(/^[\/\\]+|[\/\\]+$/g, '');
+      const parts = cleanPath.split(/[\/\\]+/);
+      const name = parts[parts.length - 1];
+
       await api.post(`/projects/${project.id}/files`, {
-        name: fullPath.split('/').pop(),
-        path: fullPath,
+        name: name,
+        path: cleanPath,
         type: createType,
         content: createType === 'file' ? '' : undefined
       });
       setNewItemName('');
       setShowCreateModal(false);
-      refreshFilesTree();
+      await refreshFilesTree(true);
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to create item');
     }

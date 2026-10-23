@@ -365,7 +365,7 @@ export default function WorkspacePage() {
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         projectId={projectId}
-        onUploadSuccess={refreshFilesTree}
+        onUploadSuccess={() => refreshFilesTree(true)}
       />
     </div>
   );

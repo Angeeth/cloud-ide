@@ -1,36 +1,39 @@
 import React, { useState } from 'react';
 
-export default function Logo({ size = 32 }) {
+export default function Logo({ size = 32, className = '' }) {
   const [imgError, setImgError] = useState(false);
 
   return (
-    <div style={{
-      width: `${size}px`,
-      height: `${size}px`,
-      borderRadius: '8px',
-      overflow: 'hidden',
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#09090b',
-      border: '1px solid rgba(168, 85, 247, 0.25)',
-      boxShadow: '0 0 12px rgba(99, 102, 241, 0.2)',
-      flexShrink: 0
-    }}>
+    <div
+      className={className}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'transparent',
+        border: 'none',
+        boxShadow: 'none',
+        flexShrink: 0
+      }}
+    >
       {!imgError ? (
         <img
-          src="/logo.jpg"
-          alt="Mirage IDE Minimalist Logo"
+          src="/logo.png"
+          alt="Mirage IDE Logo"
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover'
+            objectFit: 'contain',
+            display: 'block',
+            border: 'none'
           }}
           onError={() => setImgError(true)}
         />
       ) : (
         /* Minimalist Vector SVG Logo Icon */
-        <svg width={size * 0.65} height={size * 0.65} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path
             d="M3 18L9 6L12 12L15 6L21 18"
             stroke="url(#gradient-logo)"

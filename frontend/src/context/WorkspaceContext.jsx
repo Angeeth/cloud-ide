@@ -1,7 +1,27 @@
-import React, { createContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 
 export const WorkspaceContext = createContext(null);
+
+const findBestStarterFile = (nodes) => {
+  let firstCodeFile = null;
+  let firstAnyFile = null;
+
+  const traverse = (items) => {
+    for (const item of items) {
+      if (item.type === 'file') {
+        if (!firstAnyFile) firstAnyFile = item;
+        if (item.name !== 'README.md' && !firstCodeFile) {
+          firstCodeFile = item;
+        }
+      }
+      if (item.children) traverse(item.children);
+    }
+  };
+
+  traverse(nodes || []);
+  return firstCodeFile || firstAnyFile;
+};
 
 export function WorkspaceProvider({ children }) {
   const [project, setProject] = useState(null);
@@ -10,6 +30,7 @@ export function WorkspaceProvider({ children }) {
   const [activeFile, setActiveFile] = useState(null);
   const [fileContents, setFileContents] = useState({});
   const [unsavedFiles, setUnsavedFiles] = useState(new Set());
+  const [historyList, setHistoryList] = useState([]);
   
   const [executionOutput, setExecutionOutput] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -19,44 +40,42 @@ export function WorkspaceProvider({ children }) {
   const collaborationWs = useRef(null);
   const chatWs = useRef(null);
 
+  const openTabsRef = useRef(openTabs);
+  const activeFileRef = useRef(activeFile);
+  const projectRef = useRef(project);
+
+  useEffect(() => {
+    openTabsRef.current = openTabs;
+  }, [openTabs]);
+
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
+
   const loadProject = async (projectId) => {
     try {
       // Clear previous workspace state when switching/loading project
       setOpenTabs([]);
       setActiveFile(null);
       setFileContents({});
+      setHistoryList([]);
 
-      const [projRes, filesRes, chatRes] = await Promise.all([
+      const [projRes, filesRes, chatRes, historyRes] = await Promise.all([
         api.get(`/projects/${projectId}`),
         api.get(`/projects/${projectId}/files`),
-        api.get(`/projects/${projectId}/messages`)
+        api.get(`/projects/${projectId}/messages`),
+        api.get(`/projects/${projectId}/history`).catch(() => ({ data: [] }))
       ]);
 
       setProject(projRes.data);
       setFilesTree(filesRes.data);
       setChatMessages(chatRes.data);
+      setHistoryList(historyRes.data || []);
       
-      // Auto open first main file if available (prefer main.py/index.js over README)
-      const findBestStarterFile = (nodes) => {
-        let firstCodeFile = null;
-        let firstAnyFile = null;
-
-        const traverse = (items) => {
-          for (const item of items) {
-            if (item.type === 'file') {
-              if (!firstAnyFile) firstAnyFile = item;
-              if (item.name !== 'README.md' && !firstCodeFile) {
-                firstCodeFile = item;
-              }
-            }
-            if (item.children) traverse(item.children);
-          }
-        };
-
-        traverse(nodes);
-        return firstCodeFile || firstAnyFile;
-      };
-
       const starterFile = findBestStarterFile(filesRes.data);
       if (starterFile) {
         openFile(starterFile);
@@ -67,10 +86,151 @@ export function WorkspaceProvider({ children }) {
     }
   };
 
-  const refreshFilesTree = async () => {
-    if (!project) return;
-    const res = await api.get(`/projects/${project.id}/files`);
-    setFilesTree(res.data);
+  const refreshFilesTree = async (broadcast = false, targetProjectId = null) => {
+    const pId = targetProjectId || projectRef.current?.id;
+    if (!pId) return;
+    try {
+      const res = await api.get(`/projects/${pId}/files`);
+      setFilesTree(res.data);
+      if (broadcast && collaborationWs.current && collaborationWs.current.readyState === WebSocket.OPEN) {
+        collaborationWs.current.send(JSON.stringify({
+          type: 'tree_update'
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to refresh files tree', err);
+    }
+  };
+
+  const fetchHistory = async (targetProjectId = null) => {
+    const pId = targetProjectId || projectRef.current?.id;
+    if (!pId) return;
+    try {
+      const res = await api.get(`/projects/${pId}/history`);
+      setHistoryList(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch history', err);
+    }
+  };
+
+  const reloadRestoredWorkspace = async (targetProjectId = null) => {
+    const pId = targetProjectId || projectRef.current?.id;
+    if (!pId) return;
+
+    try {
+      const [filesRes, historyRes] = await Promise.all([
+        api.get(`/projects/${pId}/files`),
+        api.get(`/projects/${pId}/history`).catch(() => ({ data: [] }))
+      ]);
+
+      const newTree = filesRes.data || [];
+      setFilesTree(newTree);
+      setHistoryList(historyRes.data || []);
+
+      // Flatten new tree to lookup by file path
+      const filesByPath = {};
+      const traverse = (items) => {
+        for (const item of items) {
+          if (item.type === 'file') {
+            filesByPath[item.path] = item;
+          }
+          if (item.children) traverse(item.children);
+        }
+      };
+      traverse(newTree);
+
+      // Re-map previously open tabs to the new file nodes by path
+      const prevTabs = openTabsRef.current || [];
+      const nextTabs = [];
+      for (const tab of prevTabs) {
+        if (filesByPath[tab.path]) {
+          nextTabs.push(filesByPath[tab.path]);
+        }
+      }
+
+      // Determine active tab
+      const prevActive = activeFileRef.current;
+      let nextActive = null;
+      if (prevActive && filesByPath[prevActive.path]) {
+        nextActive = filesByPath[prevActive.path];
+      } else if (nextTabs.length > 0) {
+        nextActive = nextTabs[0];
+      } else {
+        nextActive = findBestStarterFile(newTree);
+        if (nextActive) {
+          nextTabs.push(nextActive);
+        }
+      }
+
+      // Fetch fresh content from file-service for all restored tabs
+      const newContents = {};
+      await Promise.all(
+        nextTabs.map(async (tab) => {
+          try {
+            const fileRes = await api.get(`/files/${tab.id}`);
+            newContents[tab.id] = fileRes.data.content || '';
+          } catch (e) {
+            console.error('Failed to reload content for tab', tab.path, e);
+          }
+        })
+      );
+
+      setOpenTabs(nextTabs);
+      setActiveFile(nextActive);
+      setFileContents(newContents);
+      setUnsavedFiles(new Set());
+
+      // Broadcast active file presence
+      if (nextActive && collaborationWs.current && collaborationWs.current.readyState === WebSocket.OPEN) {
+        collaborationWs.current.send(JSON.stringify({
+          type: 'active_file',
+          file_id: nextActive.id
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to reload restored workspace', err);
+    }
+  };
+
+  const createSnapshot = async (description) => {
+    const pId = projectRef.current?.id;
+    if (!pId) return;
+    try {
+      const res = await api.post(`/projects/${pId}/history`, {
+        description: description || 'Manual Version Snapshot'
+      });
+      await fetchHistory(pId);
+
+      if (collaborationWs.current && collaborationWs.current.readyState === WebSocket.OPEN) {
+        collaborationWs.current.send(JSON.stringify({
+          type: 'history_update'
+        }));
+      }
+      return res.data;
+    } catch (err) {
+      console.error('Failed to create snapshot', err);
+      throw err;
+    }
+  };
+
+  const restoreVersion = async (versionId, versionNumber) => {
+    const pId = projectRef.current?.id;
+    if (!pId) return;
+    try {
+      const res = await api.post(`/projects/${pId}/history/restore`, { version_id: versionId });
+      await reloadRestoredWorkspace(pId);
+
+      if (collaborationWs.current && collaborationWs.current.readyState === WebSocket.OPEN) {
+        collaborationWs.current.send(JSON.stringify({
+          type: 'version_restored',
+          version_number: versionNumber
+        }));
+      }
+      return res.data;
+    } catch (err) {
+      console.error('Failed to restore version', err);
+      throw err;
+    }
   };
 
   const openFile = async (fileNode) => {
@@ -194,6 +354,12 @@ export function WorkspaceProvider({ children }) {
           ...prev,
           [data.file_id]: data.content
         }));
+      } else if (data.type === 'tree_update') {
+        refreshFilesTree(false, projectId);
+      } else if (data.type === 'history_update') {
+        fetchHistory(projectId);
+      } else if (data.type === 'version_restored') {
+        reloadRestoredWorkspace(projectId);
       }
     };
     collaborationWs.current = cWs;
@@ -236,12 +402,17 @@ export function WorkspaceProvider({ children }) {
       activeFile,
       fileContents,
       unsavedFiles,
+      historyList,
       executionOutput,
       isExecuting,
       presenceList,
       chatMessages,
       loadProject,
       refreshFilesTree,
+      fetchHistory,
+      createSnapshot,
+      restoreVersion,
+      reloadRestoredWorkspace,
       openFile,
       closeTab,
       updateFileContent,

@@ -76,6 +76,34 @@ async def collaboration_websocket(
                     manager.presence[project_id][user_id]["active_file"] = data.get("file_id")
                 await manager.broadcast_presence(project_id)
 
+            elif msg_type == "tree_update":
+                # Broadcast real-time file/folder tree modification to all collaborators
+                broadcast_data = {
+                    "type": "tree_update",
+                    "sender_id": user_id,
+                    "sender_name": user_name
+                }
+                await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
+
+            elif msg_type == "history_update":
+                # Broadcast real-time snapshot/history list update to all collaborators
+                broadcast_data = {
+                    "type": "history_update",
+                    "sender_id": user_id,
+                    "sender_name": user_name
+                }
+                await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
+
+            elif msg_type == "version_restored":
+                # Broadcast real-time version restoration to all collaborators
+                broadcast_data = {
+                    "type": "version_restored",
+                    "version_number": data.get("version_number"),
+                    "sender_id": user_id,
+                    "sender_name": user_name
+                }
+                await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
+
     except WebSocketDisconnect:
         manager.disconnect_collaboration(websocket, project_id, user_id)
         await manager.broadcast_presence(project_id)

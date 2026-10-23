@@ -146,10 +146,27 @@ class FileService:
             FileService.verify_project_permission(project_id, current_user, require_write=True)
 
         clean_path = FileService.validate_path(path)
+        clean_name = name.strip() if name and name.strip() else clean_path.split("/")[-1]
 
         existing = db.query(File).filter(File.project_id == project_id, File.path == clean_path).first()
         if existing:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Item at path '{clean_path}' already exists")
+
+        # Auto-resolve parent_id if path has directories and parent_id wasn't explicitly supplied
+        if not parent_id and "/" in clean_path:
+            parts = clean_path.split("/")[:-1]
+            accumulated = ""
+            curr_parent = None
+            for part in parts:
+                accumulated = f"{accumulated}/{part}".strip("/") if accumulated else part
+                pf = db.query(File).filter(File.project_id == project_id, File.path == accumulated, File.type == "folder").first()
+                if not pf:
+                    pf = File(project_id=project_id, parent_id=curr_parent, name=part, path=accumulated, type="folder")
+                    db.add(pf)
+                    db.commit()
+                    db.refresh(pf)
+                curr_parent = pf.id
+            parent_id = curr_parent
 
         s3_key = None
         size_bytes = 0
@@ -161,7 +178,7 @@ class FileService:
         file_obj = File(
             project_id=project_id,
             parent_id=parent_id,
-            name=name,
+            name=clean_name,
             path=clean_path,
             type=type_,
             s3_key=s3_key,
@@ -264,7 +281,7 @@ class FileService:
             accumulated = ""
             for i in range(len(parts) - 1):
                 d_name = parts[i]
-                accumulated = f"{accumulated}/{d_name}".strip("/") if accumulated else d_name
+                accumulated = f"{accumulated}/{part}".strip("/") if accumulated else d_name
                 if accumulated not in folder_cache:
                     existing = db.query(File).filter(File.project_id == project_id, File.path == accumulated).first()
                     if not existing:
