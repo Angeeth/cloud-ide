@@ -152,16 +152,33 @@ class TerminalService:
                     return {"output": f.read(), "exit_code": 0}
             return {"output": f"cat: {target}: No such file or directory", "exit_code": 1}
 
-        # Auto-path resolution for script commands
+        # Auto-path and case resolution for script and compile commands
         cmd_parts = cmd.split(maxsplit=1)
         if len(cmd_parts) == 2:
             runner, arg = cmd_parts[0], cmd_parts[1].strip()
-            if runner in ("python", "python3", "node", "gcc", "g++"):
+            if runner in ("python", "python3", "node", "gcc", "g++", "javac", "java"):
                 arg_path = os.path.join(workspace_dir, arg.replace("/", os.sep))
                 if not os.path.exists(arg_path):
-                    arg_src_path = os.path.join(workspace_dir, "src", arg.replace("/", os.sep))
-                    if os.path.exists(arg_src_path):
-                        cmd = f"{runner} src/{arg}"
+                    try:
+                        matched = False
+                        for f in os.listdir(workspace_dir):
+                            if f.lower() == arg.lower():
+                                cmd = f"{runner} {f}"
+                                matched = True
+                                break
+                        if not matched:
+                            arg_src_path = os.path.join(workspace_dir, "src", arg.replace("/", os.sep))
+                            if os.path.exists(arg_src_path):
+                                cmd = f"{runner} src/{arg}"
+                            else:
+                                src_dir = os.path.join(workspace_dir, "src")
+                                if os.path.exists(src_dir):
+                                    for f in os.listdir(src_dir):
+                                        if f.lower() == arg.lower():
+                                            cmd = f"{runner} src/{f}"
+                                            break
+                    except Exception:
+                        pass
 
         # Run command in workspace
         try:

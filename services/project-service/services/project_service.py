@@ -2,8 +2,10 @@ import os
 import shutil
 import zipfile
 import urllib.request
+import urllib.parse
 import subprocess
 import tempfile
+import logging
 import httpx
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
@@ -13,6 +15,8 @@ from models.project import Project
 from models.project_member import ProjectMember, RoleEnum
 from schemas.project import ProjectCreate, ProjectUpdate, ProjectMemberAdd, UserResponse
 from shared.common.auth import UserClaims
+
+logger = logging.getLogger("project-service")
 
 STARTER_TEMPLATES = {
     "python": {
@@ -123,47 +127,92 @@ class ProjectService:
         if not url:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is required")
 
-        if url.endswith("/"):
-            url = url[:-1]
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = f"https://{url}"
 
-        repo_name = url.split("/")[-1].replace(".git", "")
+        clean_url = url.rstrip("/")
+        if clean_url.endswith(".git"):
+            clean_url = clean_url[:-4]
+
+        parsed = urllib.parse.urlparse(clean_url)
+        path_parts = [p for p in parsed.path.strip("/").split("/") if p]
+        repo_name = path_parts[-1] if path_parts else "Cloned-Project"
         project_name = (custom_name and custom_name.strip()) or repo_name or "Cloned-Project"
-        git_target_url = url if url.endswith(".git") else f"{url}.git"
+        git_target_url = f"{clean_url}.git"
 
         with tempfile.TemporaryDirectory() as temp_dir:
             success = False
+            last_error_detail = None
 
-            # Strategy 1: Fast Zipball HTTP Download
-            parts = url.rstrip("/").split("/")
-            if len(parts) >= 5 and "github.com" in parts[2]:
-                gh_owner, gh_repo = parts[3], parts[4].replace(".git", "")
-                for branch in ("main", "master"):
+            # Strategy 1: Fast Zipball Stream Download (for GitHub repos)
+            if "github.com" in parsed.netloc.lower() and len(path_parts) >= 2:
+                gh_owner, gh_repo = path_parts[0], path_parts[1]
+                zip_urls = [
+                    f"https://github.com/{gh_owner}/{gh_repo}/archive/HEAD.zip",
+                    f"https://github.com/{gh_owner}/{gh_repo}/archive/refs/heads/main.zip",
+                    f"https://github.com/{gh_owner}/{gh_repo}/archive/refs/heads/master.zip",
+                ]
+
+                for zip_url in zip_urls:
+                    tmp_zip_path = None
                     try:
-                        zip_url = f"https://github.com/{gh_owner}/{gh_repo}/archive/refs/heads/{branch}.zip"
-                        zip_path = os.path.join(temp_dir, "repo.zip")
-                        req = urllib.request.Request(zip_url, headers={"User-Agent": "Mozilla/5.0"})
-                        with urllib.request.urlopen(req, timeout=30) as resp, open(zip_path, "wb") as out:
-                            out.write(resp.read())
+                        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_file:
+                            tmp_zip_path = tmp_file.name
 
-                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        req = urllib.request.Request(
+                            zip_url,
+                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) MirageIDE/1.0"}
+                        )
+                        with urllib.request.urlopen(req, timeout=180) as resp, open(tmp_zip_path, "wb") as out_f:
+                            while chunk := resp.read(64 * 1024):
+                                out_f.write(chunk)
+
+                        with zipfile.ZipFile(tmp_zip_path, "r") as zip_ref:
                             zip_ref.extractall(temp_dir)
 
-                        os.remove(zip_path)
-
-                        subfolders = [os.path.join(temp_dir, d) for d in os.listdir(temp_dir) if os.path.isdir(os.path.join(temp_dir, d))]
-                        if len(subfolders) == 1:
-                            top_sub = subfolders[0]
+                        # Flatten if extracted into a single wrapper folder
+                        entries = os.listdir(temp_dir)
+                        if len(entries) == 1 and os.path.isdir(os.path.join(temp_dir, entries[0])):
+                            top_sub = os.path.join(temp_dir, entries[0])
                             for item in os.listdir(top_sub):
                                 shutil.move(os.path.join(top_sub, item), os.path.join(temp_dir, item))
                             os.rmdir(top_sub)
 
-                        success = True
-                        break
-                    except Exception:
-                        pass
+                        if os.listdir(temp_dir):
+                            success = True
+                            break
+                    except Exception as zip_err:
+                        last_error_detail = str(zip_err)
+                        # Clean temp_dir in case partial files were extracted
+                        for item in os.listdir(temp_dir):
+                            p = os.path.join(temp_dir, item)
+                            if os.path.isdir(p):
+                                shutil.rmtree(p, ignore_errors=True)
+                            else:
+                                try:
+                                    os.remove(p)
+                                except Exception:
+                                    pass
+                    finally:
+                        if tmp_zip_path and os.path.exists(tmp_zip_path):
+                            try:
+                                os.remove(tmp_zip_path)
+                            except Exception:
+                                pass
 
-            # Strategy 2: Git Clone
+            # Strategy 2: Git Clone Fallback
             if not success:
+                # Ensure temp_dir is completely clean before git clone
+                for item in os.listdir(temp_dir):
+                    p = os.path.join(temp_dir, item)
+                    if os.path.isdir(p):
+                        shutil.rmtree(p, ignore_errors=True)
+                    else:
+                        try:
+                            os.remove(p)
+                        except Exception:
+                            pass
+
                 try:
                     clone_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
                     res = subprocess.run(
@@ -175,15 +224,35 @@ class ProjectService:
                     )
                     if res.returncode != 0:
                         err_msg = res.stderr or res.stdout or "Failed to clone GitHub repository."
-                        if "Authentication failed" in err_msg or "Repository not found" in err_msg:
+                        if "Authentication failed" in err_msg or "Repository not found" in err_msg or "not found" in err_msg.lower():
                             err_msg = "Repository not found or is private. Please make sure the repository is public."
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Git Clone Error: {err_msg.strip()}")
+                    success = True
                 except subprocess.TimeoutExpired:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Git clone request timed out. The repository might be too large or network is slow.")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Git clone request timed out. The repository might be too large or the network is slow."
+                    )
+                except FileNotFoundError:
+                    if last_error_detail:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Could not download repository archive ({last_error_detail}) and git command is not installed."
+                        )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Git CLI is not available in the container to complete cloning."
+                    )
                 except Exception as e:
                     if isinstance(e, HTTPException):
                         raise e
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Clone error: {str(e)}")
+
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to clone repository. {last_error_detail or 'Please make sure the repository is public and the URL is correct.'}"
+                )
 
             # Detect primary language
             lang_counts = {"python": 0, "javascript": 0, "java": 0, "c": 0}
@@ -244,7 +313,7 @@ class ProjectService:
                         print(f"Skipped file {file_rel_path}: {err}")
 
             try:
-                with httpx.Client(timeout=60.0) as client:
+                with httpx.Client(timeout=120.0) as client:
                     client.post(
                         f"{settings.FILE_SERVICE_URL}/projects/{project.id}/batch-import",
                         json={"files": files_payload}

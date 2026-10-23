@@ -11,6 +11,8 @@ class UserResponse(BaseModel):
 
 class ExecutionRequest(BaseModel):
     project_id: str
+    language: Optional[str] = None
+    entry_point: Optional[str] = None
 
 class ExecutionResponse(BaseModel):
     id: str

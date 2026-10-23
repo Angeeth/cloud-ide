@@ -14,7 +14,13 @@ def execute_code(
     db: Session = Depends(get_db),
     current_user: UserClaims = Depends(get_current_user_claims)
 ):
-    return ExecutionService.execute_project(db, req.project_id, current_user)
+    return ExecutionService.execute_project(
+        db=db,
+        project_id=req.project_id,
+        current_user=current_user,
+        req_language=req.language,
+        req_entry_point=req.entry_point
+    )
 
 @router.get("/projects/{project_id}/executions", response_model=List[ExecutionResponse])
 def get_executions(

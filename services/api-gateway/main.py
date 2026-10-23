@@ -93,6 +93,10 @@ async def route_members_root(project_id: str, request: Request):
 async def route_members_sub(project_id: str, path: str, request: Request):
     return await forward_http_request(f"{settings.PROJECT_SERVICE_URL}/projects/{project_id}/members/{path}", request)
 
+@app.api_route("/api/projects/clone-github", methods=["POST", "OPTIONS"])
+async def route_clone_github(request: Request):
+    return await forward_http_request(f"{settings.PROJECT_SERVICE_URL}/projects/clone-github", request, timeout=300.0)
+
 @app.api_route("/api/projects", methods=["GET", "POST", "OPTIONS"])
 async def route_projects_root(request: Request):
     return await forward_http_request(f"{settings.PROJECT_SERVICE_URL}/projects", request)

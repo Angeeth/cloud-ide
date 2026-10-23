@@ -275,8 +275,13 @@ export default function Navbar({ workspaceProps }) {
               <span>Share</span>
             </button>
           )}
+        </div>
+      )}
 
-          {/* VS Code Style Panel Toggle Controls */}
+      {/* Right section: Layout toggles (at end), Home button, Profile, Logout */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Layout 3 boxes (VS Code Style Panel Toggle Controls moved to end) */}
+        {isWorkspace && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -284,7 +289,7 @@ export default function Navbar({ workspaceProps }) {
             borderRadius: '6px',
             border: '1px solid #27272a',
             padding: '2px',
-            marginLeft: '0.25rem'
+            marginRight: '0.2rem'
           }}>
             <button
               onClick={toggleLeft}
@@ -297,7 +302,8 @@ export default function Navbar({ workspaceProps }) {
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                transition: 'all 0.15s ease'
               }}
               title="Toggle Primary Side Bar (Explorer)"
             >
@@ -314,7 +320,8 @@ export default function Navbar({ workspaceProps }) {
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                transition: 'all 0.15s ease'
               }}
               title="Toggle Panel (Terminal / Output)"
             >
@@ -331,28 +338,72 @@ export default function Navbar({ workspaceProps }) {
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                transition: 'all 0.15s ease'
               }}
               title="Toggle Secondary Side Bar (Chat / Members / History)"
             >
               <PanelRight size={14} />
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* User profile & Logout */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {isWorkspace && (
+          <div style={{ width: '1px', height: '18px', backgroundColor: '#27272a' }} />
+        )}
+
+        {/* Home button to go to homescreen / dashboard */}
+        <Link
+          to="/dashboard"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            color: '#a1a1aa',
+            textDecoration: 'none',
+            fontSize: '0.82rem',
+            fontWeight: '500',
+            padding: '4px 8px',
+            borderRadius: '6px',
+            backgroundColor: '#18181b',
+            border: '1px solid #27272a',
+            transition: 'all 0.15s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#27272a';
+            e.currentTarget.style.color = '#ffffff';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#18181b';
+            e.currentTarget.style.color = '#a1a1aa';
+          }}
+          title="Go to Homescreen / Dashboard"
+        >
+          <Home size={14} />
+          <span>Home</span>
+        </Link>
+
+        {/* User profile (avatar only) */}
         <Link
           to="/profile"
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.4rem',
-            color: '#a1a1aa',
+            justifyContent: 'center',
             textDecoration: 'none',
-            fontSize: '0.85rem'
+            padding: '2px',
+            borderRadius: '50%',
+            transition: 'transform 0.15s ease, opacity 0.15s ease'
           }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.06)';
+            e.currentTarget.style.opacity = '0.9';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.opacity = '1';
+          }}
+          title={user?.name ? `${user.name} - Profile` : 'Profile'}
         >
           <div style={{
             width: '28px',
@@ -368,9 +419,9 @@ export default function Navbar({ workspaceProps }) {
           }}>
             {user?.name ? user.name[0].toUpperCase() : 'U'}
           </div>
-          <span style={{ color: '#fafafa', fontWeight: '500' }}>{user?.name || 'Developer'}</span>
         </Link>
 
+        {/* Logout button */}
         <button
           onClick={logout}
           style={{
@@ -380,9 +431,19 @@ export default function Navbar({ workspaceProps }) {
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            padding: '4px'
+            padding: '5px',
+            borderRadius: '6px',
+            transition: 'all 0.15s ease'
           }}
-          title="Sign out"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+            e.currentTarget.style.color = '#ef4444';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = '#71717a';
+          }}
+          title="Sign out / Logout"
         >
           <LogOut size={16} />
         </button>

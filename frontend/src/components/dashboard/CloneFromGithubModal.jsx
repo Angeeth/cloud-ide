@@ -34,7 +34,16 @@ export default function CloneFromGithubModal({ isOpen, onClose, onProjectCloned 
       onClose();
       navigate(`/projects/${res.data.id}`);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to clone repository. Make sure the repository is public and the URL is correct.');
+      const serverError = err.response?.data?.detail || err.response?.data?.message || err.message;
+      let errorMessage = 'Failed to clone repository. Make sure the repository is public and the URL is correct.';
+      if (typeof serverError === 'string') {
+        errorMessage = serverError;
+      } else if (Array.isArray(serverError)) {
+        errorMessage = serverError.map(e => e.msg || (typeof e === 'string' ? e : JSON.stringify(e))).join(', ');
+      } else if (serverError && typeof serverError === 'object') {
+        errorMessage = JSON.stringify(serverError);
+      }
+      setError(errorMessage);
       setLoading(false);
     }
   };
@@ -135,9 +144,12 @@ export default function CloneFromGithubModal({ isOpen, onClose, onProjectCloned 
             <button type="button" className="btn btn-secondary" onClick={onClose} disabled={loading}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+            <button type="submit" className="btn btn-primary" disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               {loading ? (
-                <span>Cloning Repo...</span>
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  <span>Cloning Repo...</span>
+                </>
               ) : (
                 <>
                   <GitBranch size={15} />

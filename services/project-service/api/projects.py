@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, status, Query, HTTPException
 from sqlalchemy.orm import Session
 from database.session import get_db
 from schemas.project import ProjectCreate, ProjectCloneGithub, ProjectUpdate, ProjectResponse
+from models.project import Project
 from services.project_service import ProjectService
 from shared.common.auth import get_current_user_claims, get_optional_user_claims, UserClaims
 
@@ -42,7 +43,13 @@ def get_project_member_role(
     if not target_uid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id query param or valid Bearer token required")
     role = ProjectService.get_member_role(db, project_id, target_uid)
-    return {"project_id": project_id, "user_id": target_uid, "role": role}
+    project = db.query(Project).filter(Project.id == project_id).first()
+    return {
+        "project_id": project_id,
+        "user_id": target_uid,
+        "role": role,
+        "language": project.language if project else "python"
+    }
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 def get_project(

@@ -354,7 +354,11 @@ export function WorkspaceProvider({ children }) {
     }
 
     try {
-      const res = await api.post('/execute', { project_id: project.id });
+      const res = await api.post('/execute', {
+        project_id: project.id,
+        language: project.language,
+        entry_point: activeFile?.path
+      });
       setExecutionOutput(res.data);
     } catch (err) {
       setExecutionOutput({
