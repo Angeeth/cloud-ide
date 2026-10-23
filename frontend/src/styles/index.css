@@ -260,3 +260,43 @@ select.input-field option:checked {
 .layout-splitter-h.dragging {
   background-color: #818cf8;
 }
+
+/* ==================== Real-Time Collaborator Cursor Pipe ==================== */
+.remote-cursor-pipe {
+  border-left-width: 2px !important;
+  border-left-style: solid !important;
+  margin-left: -1px !important;
+  position: relative !important;
+  z-index: 50 !important;
+  animation: remote-cursor-blink 1s step-end infinite !important;
+}
+
+@keyframes remote-cursor-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Caret colors */
+.remote-cursor-purple { border-left-color: #c084fc !important; }
+.remote-cursor-cyan { border-left-color: #38bdf8 !important; }
+.remote-cursor-emerald { border-left-color: #34d399 !important; }
+.remote-cursor-amber { border-left-color: #fbbf24 !important; }
+.remote-cursor-rose { border-left-color: #fb7185 !important; }
+.remote-cursor-indigo { border-left-color: #818cf8 !important; }
+.remote-cursor-orange { border-left-color: #fb923c !important; }
+.remote-cursor-teal { border-left-color: #2dd4bf !important; }
+
+/* Subtle Selection highlights */
+.remote-selection-purple { background-color: rgba(168, 85, 247, 0.25) !important; }
+.remote-selection-cyan { background-color: rgba(56, 189, 248, 0.25) !important; }
+.remote-selection-emerald { background-color: rgba(52, 211, 153, 0.25) !important; }
+.remote-selection-amber { background-color: rgba(251, 191, 36, 0.25) !important; }
+.remote-selection-rose { background-color: rgba(251, 113, 133, 0.25) !important; }
+.remote-selection-indigo { background-color: rgba(129, 140, 248, 0.25) !important; }
+.remote-selection-orange { background-color: rgba(251, 146, 60, 0.25) !important; }
+.remote-selection-teal { background-color: rgba(45, 212, 191, 0.25) !important; }
+

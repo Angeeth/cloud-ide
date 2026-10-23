@@ -104,6 +104,16 @@ async def collaboration_websocket(
                 }
                 await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
 
+            elif msg_type == "project_update":
+                # Broadcast project rename to all collaborators
+                broadcast_data = {
+                    "type": "project_update",
+                    "project_name": data.get("project_name"),
+                    "sender_id": user_id,
+                    "sender_name": user_name
+                }
+                await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
+
     except WebSocketDisconnect:
         manager.disconnect_collaboration(websocket, project_id, user_id)
         await manager.broadcast_presence(project_id)

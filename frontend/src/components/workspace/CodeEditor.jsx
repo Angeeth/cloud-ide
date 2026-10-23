@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { useContext, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { WorkspaceContext } from '../../context/WorkspaceContext';
 import Logo from '../common/Logo';
@@ -23,9 +23,116 @@ function getLanguage(filename = '') {
   }
 }
 
+const COLLAB_COLORS = [
+  { name: 'purple', caret: '#c084fc', line: 'rgba(192, 132, 252, 0.12)' },
+  { name: 'cyan', caret: '#38bdf8', line: 'rgba(56, 189, 248, 0.12)' },
+  { name: 'emerald', caret: '#34d399', line: 'rgba(52, 211, 153, 0.12)' },
+  { name: 'amber', caret: '#fbbf24', line: 'rgba(251, 191, 36, 0.12)' },
+  { name: 'rose', caret: '#fb7185', line: 'rgba(251, 113, 133, 0.12)' },
+  { name: 'indigo', caret: '#818cf8', line: 'rgba(129, 140, 248, 0.12)' },
+  { name: 'orange', caret: '#fb923c', line: 'rgba(251, 146, 60, 0.12)' },
+  { name: 'teal', caret: '#2dd4bf', line: 'rgba(45, 212, 191, 0.12)' }
+];
+
+function getCollabColor(id = '') {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash << 5) - hash + id.charCodeAt(i);
+    hash |= 0;
+  }
+  return COLLAB_COLORS[Math.abs(hash) % COLLAB_COLORS.length];
+}
+
 export default function CodeEditor() {
-  const { activeFile, fileContents, updateFileContent, saveCurrentFile, project } = useContext(WorkspaceContext);
+  const {
+    activeFile,
+    fileContents,
+    updateFileContent,
+    saveCurrentFile,
+    project,
+    remoteCursors,
+    broadcastCursorPosition
+  } = useContext(WorkspaceContext);
+
   const canEdit = project?.user_role !== 'VIEWER';
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const decorationsRef = useRef([]);
+  const throttleRef = useRef(null);
+  const activeFileRef = useRef(activeFile);
+
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
+
+  // Synchronize and render real-time collaborator cursors, line highlights, and name labels
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco || !activeFile) {
+      if (editor && decorationsRef.current.length > 0) {
+        decorationsRef.current = editor.deltaDecorations(decorationsRef.current, []);
+      }
+      return;
+    }
+
+    const relevantCursors = Object.values(remoteCursors || {}).filter(
+      (c) => c && c.fileId === activeFile.id && c.position && c.position.lineNumber
+    );
+
+    const newDecorations = [];
+
+    relevantCursors.forEach((collab) => {
+      const color = getCollabColor(collab.senderId);
+      const pos = collab.position;
+      const sel = collab.selection;
+      const name = collab.senderName || 'Collaborator';
+
+      // Real-time colored blinking cursor pipe at collaborator's exact position
+      newDecorations.push({
+        range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+        options: {
+          className: `remote-cursor-pipe remote-cursor-${color.name}`,
+          hoverMessage: {
+            value: `**${name}** is on line ${pos.lineNumber}, col ${pos.column}`
+          },
+          overviewRuler: {
+            color: color.caret,
+            position: monaco.editor.OverviewRulerLane.Right
+          }
+        }
+      });
+
+      // Subtle selection highlight if collaborator selected a text range
+      if (
+        sel &&
+        (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)
+      ) {
+        newDecorations.push({
+          range: new monaco.Range(
+            sel.startLineNumber,
+            sel.startColumn,
+            sel.endLineNumber,
+            sel.endColumn
+          ),
+          options: {
+            className: `remote-selection remote-selection-${color.name}`
+          }
+        });
+      }
+    });
+
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
+  }, [remoteCursors, activeFile]);
+
+  // Clean up decorations on unmount
+  useEffect(() => {
+    return () => {
+      if (editorRef.current && decorationsRef.current.length > 0) {
+        decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+      }
+    };
+  }, []);
 
   if (!activeFile) {
     return (
@@ -84,11 +191,45 @@ export default function CodeEditor() {
   };
 
   const handleEditorMount = (editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       if (canEdit) {
         saveCurrentFile();
       }
     });
+
+    const sendPosition = () => {
+      const curFile = activeFileRef.current;
+      if (!curFile || !editor || !broadcastCursorPosition) return;
+      const pos = editor.getPosition();
+      const sel = editor.getSelection();
+      if (pos) {
+        broadcastCursorPosition(
+          curFile.id,
+          { lineNumber: pos.lineNumber, column: pos.column },
+          sel ? {
+            startLineNumber: sel.startLineNumber,
+            startColumn: sel.startColumn,
+            endLineNumber: sel.endLineNumber,
+            endColumn: sel.endColumn
+          } : null
+        );
+      }
+    };
+
+    // Smooth throttled position broadcast (~20fps)
+    const onCursorChange = () => {
+      if (throttleRef.current) return;
+      throttleRef.current = setTimeout(() => {
+        throttleRef.current = null;
+        sendPosition();
+      }, 50);
+    };
+
+    editor.onDidChangeCursorPosition(onCursorChange);
+    editor.onDidChangeCursorSelection(onCursorChange);
   };
 
   return (

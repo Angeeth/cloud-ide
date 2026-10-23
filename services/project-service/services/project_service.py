@@ -314,8 +314,8 @@ class ProjectService:
     @staticmethod
     def update_project(db: Session, project_id: str, project_in: ProjectUpdate, current_user: UserClaims) -> Project:
         role = ProjectService.get_member_role(db, project_id, current_user.id)
-        if role != RoleEnum.OWNER.value:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the project OWNER can update project settings")
+        if role not in [RoleEnum.OWNER.value, RoleEnum.EDITOR.value]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the project OWNER or EDITOR can update project settings")
 
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:

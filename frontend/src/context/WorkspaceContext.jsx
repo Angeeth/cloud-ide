@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
 
 export const WorkspaceContext = createContext(null);
@@ -31,6 +31,7 @@ export function WorkspaceProvider({ children }) {
   const [fileContents, setFileContents] = useState({});
   const [unsavedFiles, setUnsavedFiles] = useState(new Set());
   const [historyList, setHistoryList] = useState([]);
+  const [remoteCursors, setRemoteCursors] = useState({});
   
   const [executionOutput, setExecutionOutput] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -63,6 +64,7 @@ export function WorkspaceProvider({ children }) {
       setActiveFile(null);
       setFileContents({});
       setHistoryList([]);
+      setRemoteCursors({});
 
       const [projRes, filesRes, chatRes, historyRes] = await Promise.all([
         api.get(`/projects/${projectId}`),
@@ -94,6 +96,27 @@ export function WorkspaceProvider({ children }) {
       setProject(res.data);
     } catch (err) {
       console.error('Failed to refresh project metadata', err);
+    }
+  };
+
+  const renameProject = async (newName) => {
+    const pId = projectRef.current?.id;
+    if (!pId) return;
+    try {
+      const res = await api.put(`/projects/${pId}`, { name: newName });
+      const updatedName = res.data.name || newName;
+      setProject((prev) => prev ? { ...prev, name: updatedName } : prev);
+
+      if (collaborationWs.current && collaborationWs.current.readyState === WebSocket.OPEN) {
+        collaborationWs.current.send(JSON.stringify({
+          type: 'project_update',
+          project_name: updatedName
+        }));
+      }
+      return res.data;
+    } catch (err) {
+      console.error('Failed to rename project', err);
+      throw err;
     }
   };
 
@@ -359,7 +382,33 @@ export function WorkspaceProvider({ children }) {
     cWs.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'presence_update') {
-        setPresenceList(data.users || []);
+        const users = data.users || [];
+        setPresenceList(users);
+        const onlineIds = new Set(users.map((u) => u.user_id));
+        setRemoteCursors((prev) => {
+          let changed = false;
+          const next = {};
+          for (const uid in prev) {
+            if (onlineIds.has(uid)) {
+              next[uid] = prev[uid];
+            } else {
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      } else if (data.type === 'cursor_position') {
+        setRemoteCursors((prev) => ({
+          ...prev,
+          [data.sender_id]: {
+            fileId: data.file_id,
+            position: data.position,
+            selection: data.selection,
+            senderId: data.sender_id,
+            senderName: data.sender_name || `User ${data.sender_id ? data.sender_id.slice(0, 5) : ''}`,
+            lastUpdated: Date.now()
+          }
+        }));
       } else if (data.type === 'file_change') {
         setFileContents((prev) => ({
           ...prev,
@@ -371,6 +420,12 @@ export function WorkspaceProvider({ children }) {
         fetchHistory(projectId);
       } else if (data.type === 'version_restored') {
         reloadRestoredWorkspace(projectId);
+      } else if (data.type === 'project_update') {
+        if (data.project_name) {
+          setProject((prev) => prev ? { ...prev, name: data.project_name } : prev);
+        } else {
+          refreshProject(projectId);
+        }
       }
     };
     collaborationWs.current = cWs;
@@ -405,6 +460,17 @@ export function WorkspaceProvider({ children }) {
     }
   };
 
+  const broadcastCursorPosition = useCallback((fileId, position, selection = null) => {
+    if (collaborationWs.current && collaborationWs.current.readyState === WebSocket.OPEN) {
+      collaborationWs.current.send(JSON.stringify({
+        type: 'cursor_position',
+        file_id: fileId,
+        position: position,
+        selection: selection
+      }));
+    }
+  }, []);
+
   return (
     <WorkspaceContext.Provider value={{
       project,
@@ -414,12 +480,14 @@ export function WorkspaceProvider({ children }) {
       fileContents,
       unsavedFiles,
       historyList,
+      remoteCursors,
       executionOutput,
       isExecuting,
       presenceList,
       chatMessages,
       loadProject,
       refreshProject,
+      renameProject,
       refreshFilesTree,
       fetchHistory,
       createSnapshot,
@@ -432,7 +500,8 @@ export function WorkspaceProvider({ children }) {
       runCode,
       connectWebSockets,
       disconnectWebSockets,
-      sendChatMessage
+      sendChatMessage,
+      broadcastCursorPosition
     }}>
       {children}
     </WorkspaceContext.Provider>
