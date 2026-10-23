@@ -4,7 +4,7 @@ import api from '../../services/api';
 import { Terminal as TerminalIcon, Clock, CheckCircle, XCircle, Play } from 'lucide-react';
 
 export default function OutputPanel() {
-  const { executionOutput, isExecuting, project } = useContext(WorkspaceContext);
+  const { executionOutput, isExecuting, project, refreshFilesTree } = useContext(WorkspaceContext);
   const [activeTab, setActiveTab] = useState('output'); // 'output', 'terminal', 'history'
   
   // Terminal State
@@ -13,6 +13,9 @@ export default function OutputPanel() {
   ]);
   const [currentInput, setCurrentInput] = useState('');
   const [isExecTerminal, setIsExecTerminal] = useState(false);
+  const [commandHistory, setCommandHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const tempInputRef = useRef('');
   
   const terminalInputRef = useRef(null);
   const terminalScrollRef = useRef(null);
@@ -38,10 +41,42 @@ export default function OutputPanel() {
     }
   }, [terminalHistory, activeTab, currentInput]);
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (commandHistory.length === 0) return;
+      if (historyIndex === -1) {
+        tempInputRef.current = currentInput;
+        const nextIndex = commandHistory.length - 1;
+        setHistoryIndex(nextIndex);
+        setCurrentInput(commandHistory[nextIndex]);
+      } else if (historyIndex > 0) {
+        const nextIndex = historyIndex - 1;
+        setHistoryIndex(nextIndex);
+        setCurrentInput(commandHistory[nextIndex]);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex === -1) return;
+      if (historyIndex < commandHistory.length - 1) {
+        const nextIndex = historyIndex + 1;
+        setHistoryIndex(nextIndex);
+        setCurrentInput(commandHistory[nextIndex]);
+      } else {
+        setHistoryIndex(-1);
+        setCurrentInput(tempInputRef.current);
+      }
+    }
+  };
+
   const handleTerminalSubmit = async (e) => {
     e.preventDefault();
     const cmd = currentInput.trim();
     if (!cmd || !project) return;
+
+    setCommandHistory((prev) => [...prev, cmd]);
+    setHistoryIndex(-1);
+    tempInputRef.current = '';
 
     const newHistory = [...terminalHistory, { type: 'cmd', text: cmd }];
     setTerminalHistory(newHistory);
@@ -58,10 +93,16 @@ export default function OutputPanel() {
       if (res.data.clear) {
         setTerminalHistory([]);
       } else {
-        setTerminalHistory((prev) => [
-          ...prev,
-          { type: 'out', text: res.data.output, exitCode: res.data.exit_code }
-        ]);
+        const outText = res.data.output || '';
+        if (outText.trim() && outText !== '[Command executed with no output]') {
+          setTerminalHistory((prev) => [
+            ...prev,
+            { type: 'out', text: outText, exitCode: res.data.exit_code }
+          ]);
+        }
+        if (refreshFilesTree) {
+          refreshFilesTree(true);
+        }
       }
     } catch (err) {
       setTerminalHistory((prev) => [
@@ -260,6 +301,7 @@ export default function OutputPanel() {
                 type="text"
                 value={currentInput}
                 onChange={(e) => setCurrentInput(e.target.value)}
+                onKeyDown={handleKeyDown}
                 disabled={isExecTerminal}
                 style={{
                   flex: 1,

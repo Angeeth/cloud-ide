@@ -281,7 +281,7 @@ class FileService:
             accumulated = ""
             for i in range(len(parts) - 1):
                 d_name = parts[i]
-                accumulated = f"{accumulated}/{part}".strip("/") if accumulated else d_name
+                accumulated = f"{accumulated}/{d_name}".strip("/") if accumulated else d_name
                 if accumulated not in folder_cache:
                     existing = db.query(File).filter(File.project_id == project_id, File.path == accumulated).first()
                     if not existing:
@@ -328,6 +328,111 @@ class FileService:
             if f.s3_key:
                 result[f.path] = storage_manager.get_file(f.s3_key)
         return result
+
+    @staticmethod
+    def get_raw_folders_list(db: Session, project_id: str) -> List[str]:
+        folders = db.query(File).filter(File.project_id == project_id, File.type == "folder").all()
+        return [f.path for f in folders]
+
+    @staticmethod
+    def sync_filesystem(db: Session, project_id: str, items: List[dict]) -> dict:
+        normalized_items = []
+        all_folder_paths = set()
+
+        for item in items:
+            raw_path = item.get("path", "").replace("\\", "/").strip("/")
+            if not raw_path:
+                continue
+            item_type = item.get("type", "file")
+            normalized_items.append({
+                "path": raw_path,
+                "type": item_type,
+                "content": item.get("content", "")
+            })
+            if item_type == "folder":
+                all_folder_paths.add(raw_path)
+
+            # Ensure all ancestor paths are recognized as folders
+            parts = raw_path.split("/")
+            for i in range(1, len(parts)):
+                all_folder_paths.add("/".join(parts[:i]))
+
+        # Include any implied ancestor folders that weren't in items
+        existing_incoming_paths = {item["path"] for item in normalized_items}
+        for f_path in all_folder_paths:
+            if f_path not in existing_incoming_paths:
+                normalized_items.append({
+                    "path": f_path,
+                    "type": "folder",
+                    "content": ""
+                })
+                existing_incoming_paths.add(f_path)
+
+        # 1. Handle Deletions: any file or folder in DB not in existing_incoming_paths
+        existing_records = db.query(File).filter(File.project_id == project_id).all()
+        for rec in existing_records:
+            if rec.path not in existing_incoming_paths:
+                if rec.type == "file" and rec.s3_key:
+                    storage_manager.delete_file(rec.s3_key)
+                db.delete(rec)
+        db.commit()
+
+        # 2. Sort by path depth so parent folders are inserted/present before children
+        normalized_items.sort(key=lambda x: len(x["path"].split("/")))
+
+        # 3. Insert or update records
+        for item in normalized_items:
+            clean_path = item["path"]
+            parts = clean_path.split("/")
+            name = parts[-1]
+            item_type = item["type"]
+            parent_path = "/".join(parts[:-1]) if len(parts) > 1 else None
+
+            parent_id = None
+            if parent_path:
+                p_rec = db.query(File).filter(File.project_id == project_id, File.path == parent_path).first()
+                if p_rec:
+                    parent_id = p_rec.id
+
+            rec = db.query(File).filter(File.project_id == project_id, File.path == clean_path).first()
+            if not rec:
+                s3_key = None
+                size_bytes = 0
+                if item_type == "file":
+                    s3_key = f"projects/{project_id}/{clean_path}"
+                    content = item.get("content") or ""
+                    storage_manager.save_file(s3_key, content)
+                    size_bytes = len(content.encode("utf-8"))
+
+                new_rec = File(
+                    project_id=project_id,
+                    parent_id=parent_id,
+                    name=name,
+                    path=clean_path,
+                    type=item_type,
+                    s3_key=s3_key,
+                    size_bytes=size_bytes
+                )
+                db.add(new_rec)
+                db.commit()
+                db.refresh(new_rec)
+            else:
+                updated = False
+                if rec.parent_id != parent_id:
+                    rec.parent_id = parent_id
+                    updated = True
+                if item_type == "file":
+                    content = item.get("content")
+                    if content is not None:
+                        s3_key = rec.s3_key or f"projects/{project_id}/{clean_path}"
+                        storage_manager.save_file(s3_key, content)
+                        rec.s3_key = s3_key
+                        rec.size_bytes = len(content.encode("utf-8"))
+                        updated = True
+                if updated:
+                    db.commit()
+
+        return {"status": "success", "synced_count": len(normalized_items)}
 
     @staticmethod
     def delete_all_project_files(db: Session, project_id: str):

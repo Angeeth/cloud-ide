@@ -42,3 +42,11 @@ class BatchImportItem(BaseModel):
 
 class BatchImportRequest(BaseModel):
     files: List[BatchImportItem]
+
+class SyncFSItem(BaseModel):
+    path: str
+    type: str = "file"  # 'file' or 'folder'
+    content: Optional[str] = ""
+
+class SyncFSRequest(BaseModel):
+    items: List[SyncFSItem]

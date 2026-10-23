@@ -86,6 +86,17 @@ export function WorkspaceProvider({ children }) {
     }
   };
 
+  const refreshProject = async (targetProjectId = null) => {
+    const pId = targetProjectId || projectRef.current?.id;
+    if (!pId) return;
+    try {
+      const res = await api.get(`/projects/${pId}`);
+      setProject(res.data);
+    } catch (err) {
+      console.error('Failed to refresh project metadata', err);
+    }
+  };
+
   const refreshFilesTree = async (broadcast = false, targetProjectId = null) => {
     const pId = targetProjectId || projectRef.current?.id;
     if (!pId) return;
@@ -408,6 +419,7 @@ export function WorkspaceProvider({ children }) {
       presenceList,
       chatMessages,
       loadProject,
+      refreshProject,
       refreshFilesTree,
       fetchHistory,
       createSnapshot,

@@ -27,6 +27,43 @@ class TerminalService:
         return role
 
     @staticmethod
+    def _sync_workspace_to_file_service(project_id: str, workspace_dir: str):
+        items = []
+        ignored_names = {".git", "__pycache__", ".pytest_cache", ".cache", "node_modules", ".venv", "venv", ".mirage"}
+        for root, dirs, files_list in os.walk(workspace_dir):
+            dirs[:] = [d for d in dirs if d not in ignored_names and not d.startswith(".")]
+            rel_root = os.path.relpath(root, workspace_dir).replace("\\", "/")
+            if rel_root == ".":
+                rel_root = ""
+
+            for d in dirs:
+                f_path = f"{rel_root}/{d}".lstrip("/")
+                items.append({"path": f_path, "type": "folder", "content": ""})
+
+            for f in files_list:
+                if f.startswith(".") or f in ignored_names:
+                    continue
+                fl_path = f"{rel_root}/{f}".lstrip("/")
+                full_path = os.path.join(root, f)
+                content = ""
+                try:
+                    if os.path.isfile(full_path) and os.path.getsize(full_path) < 2 * 1024 * 1024:
+                        with open(full_path, "r", encoding="utf-8", errors="replace") as fl:
+                            content = fl.read()
+                except Exception:
+                    pass
+                items.append({"path": fl_path, "type": "file", "content": content})
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                client.post(
+                    f"{settings.FILE_SERVICE_URL}/projects/{project_id}/sync-fs",
+                    json={"items": items}
+                )
+        except Exception as e:
+            print(f"Warning: could not sync workspace back to file-service: {e}")
+
+    @staticmethod
     def execute_command(project_id: str, command: str, current_user: UserClaims) -> Dict[str, Any]:
         role = TerminalService._verify_permission(project_id, current_user)
         cmd = command.strip()
@@ -67,6 +104,14 @@ class TerminalService:
                         os.makedirs(os.path.dirname(full_p), exist_ok=True)
                         with open(full_p, "w", encoding="utf-8") as f:
                             f.write(content or "")
+
+                # Also sync folders from file-service
+                folders_res = client.get(f"{settings.FILE_SERVICE_URL}/projects/{project_id}/folders/raw")
+                if folders_res.status_code == 200:
+                    for rel_f in folders_res.json():
+                        clean_f = rel_f.lstrip("/\\")
+                        f_full = os.path.join(workspace_dir, clean_f.replace("/", os.sep))
+                        os.makedirs(f_full, exist_ok=True)
         except Exception as e:
             print(f"Warning: could not sync files from file-service: {e}")
 
@@ -91,7 +136,7 @@ class TerminalService:
                     top_items.add(f"{parts[0]}/")
                 elif parts[0]:
                     top_items.add(parts[0])
-            return {"output": "  ".join(sorted(top_items)) if top_items else "[Empty Directory]", "exit_code": 0}
+            return {"output": "  ".join(sorted(top_items)) if top_items else "", "exit_code": 0}
 
         # Handle 'cat <filename>'
         if cmd.startswith("cat "):
@@ -132,7 +177,11 @@ class TerminalService:
             output = stdout
             if stderr:
                 output += ("\n" + stderr if output else stderr)
-            return {"output": output or "[Command executed with no output]", "exit_code": proc.returncode}
+
+            # Sync workspace disk changes (folders, files) back to file-service
+            TerminalService._sync_workspace_to_file_service(project_id, workspace_dir)
+
+            return {"output": output or "", "exit_code": proc.returncode}
         except subprocess.TimeoutExpired:
             proc.kill()
             return {"output": f"Command execution timed out after {settings.COMMAND_TIMEOUT_SECONDS}s.", "exit_code": 124}

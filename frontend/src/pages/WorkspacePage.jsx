@@ -18,6 +18,7 @@ export default function WorkspacePage() {
   const {
     project,
     loadProject,
+    refreshProject,
     connectWebSockets,
     disconnectWebSockets,
     saveCurrentFile,
@@ -358,7 +359,7 @@ export default function WorkspacePage() {
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
         project={project}
-        onMembersUpdated={() => loadProject(projectId)}
+        onMembersUpdated={() => refreshProject(projectId)}
       />
 
       <UploadProjectModal

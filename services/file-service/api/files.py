@@ -7,7 +7,8 @@ from schemas.file import (
     FileContentSave,
     FileResponse,
     StarterInitRequest,
-    BatchImportRequest
+    BatchImportRequest,
+    SyncFSRequest
 )
 from services.file_service import FileService
 from shared.common.auth import get_current_user_claims, UserClaims
@@ -102,6 +103,22 @@ def get_raw_files(
     db: Session = Depends(get_db)
 ) -> Dict[str, str]:
     return FileService.get_raw_files_dict(db, project_id)
+
+@router.get("/projects/{project_id}/folders/raw")
+def get_raw_folders(
+    project_id: str,
+    db: Session = Depends(get_db)
+) -> List[str]:
+    return FileService.get_raw_folders_list(db, project_id)
+
+@router.post("/projects/{project_id}/sync-fs")
+def sync_fs(
+    project_id: str,
+    req: SyncFSRequest,
+    db: Session = Depends(get_db)
+):
+    items_data = [item.model_dump() for item in req.items]
+    return FileService.sync_filesystem(db, project_id, items_data)
 
 @router.delete("/projects/{project_id}/files-all")
 def delete_all_files(
