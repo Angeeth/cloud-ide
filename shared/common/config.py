@@ -30,14 +30,32 @@ class BaseServiceSettings(BaseSettings):
             return v.replace("postgresql://", "postgresql+psycopg2://", 1)
         return v
 
+    @field_validator("CORS_ORIGINS", mode="before")
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            if v.strip() == "*":
+                return ["*"]
+            import json
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
     # Redis Pub/Sub & Cache
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # S3 / Cloud / Local Disk Storage
+    # S3 / GCP Cloud Storage / Local Disk Storage
+    STORAGE_BACKEND: str = "local"  # 'local', 'gcs', or 's3'
     USE_LOCAL_STORAGE: bool = True
     LOCAL_STORAGE_PATH: str = "./storage"
+    GCS_BUCKET_NAME: str = "mirage-project-files"
+    GCP_PROJECT_ID: str = ""
     AWS_ACCESS_KEY_ID: str = "mock_access_key"
     AWS_SECRET_ACCESS_KEY: str = "mock_secret_key"
     AWS_REGION: str = "us-east-1"

@@ -103,3 +103,21 @@ Thumbs.db
 desktop.ini
 *.log
 $RECYCLE.BIN/
+
+# ==========================================
+# Terraform & Infrastructure Secrets
+# ==========================================
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!terraform/terraform.tfvars.example
+.terraformrc
+terraform.rc
+

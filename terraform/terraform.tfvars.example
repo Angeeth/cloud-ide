@@ -1,0 +1,36 @@
+# ==============================================================================
+# Mirage IDE — Example Terraform Variable Configuration
+# ==============================================================================
+# Copy this file to "terraform.tfvars" and replace the placeholders with your values:
+#   Copy-Item terraform.tfvars.example terraform.tfvars
+# ==============================================================================
+
+# REQUIRED: Your Google Cloud Project ID (from GCP Console)
+project_id = "your-gcp-project-id-here"
+
+# Primary deployment region and zone
+region = "us-central1"
+zone   = "us-central1-a"
+
+# Environment tag
+environment = "production"
+
+# Machine sizing for student demonstration (cost-effective)
+machine_type_default       = "e2-small"       # auth, project, file, import, terminal, chat, history
+machine_type_gateway       = "e2-medium"      # api-gateway
+machine_type_execution     = "e2-standard-2"  # execution-service (spawns container sandboxes)
+machine_type_collaboration = "e2-medium"      # collaboration-service (live cursor broadcasting)
+machine_type_database      = "e2-medium"      # dedicated postgres-db
+
+# Database configuration
+db_disk_size_gb = 20
+db_name         = "mirage_db"
+db_user         = "mirage_user"
+db_password     = "ChangeMeToStrongPassword2026!"
+
+# Application security
+jwt_secret_key = "generate_a_secure_random_jwt_secret_key_here"
+
+# Optional domain name and SSL configuration (Keep default for HTTP demo IP access)
+domain_name = ""
+enable_ssl  = false

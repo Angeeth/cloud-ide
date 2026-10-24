@@ -1,0 +1,85 @@
+# ==============================================================================
+# Mirage IDE — Google Cloud Build Configuration
+# ==============================================================================
+# Builds and pushes all 10 microservice Docker images directly on Google's high-speed
+# cloud infrastructure, bypassing local Cloud Shell network throttles.
+# ==============================================================================
+
+steps:
+  # 1. API Gateway
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/api-gateway:latest', '-f', 'services/api-gateway/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/api-gateway:latest']
+
+  # 2. Auth Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/auth-service:latest', '-f', 'services/auth-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/auth-service:latest']
+
+  # 3. Project Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/project-service:latest', '-f', 'services/project-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/project-service:latest']
+
+  # 4. File Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/file-service:latest', '-f', 'services/file-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/file-service:latest']
+
+  # 5. Import Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/import-service:latest', '-f', 'services/import-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/import-service:latest']
+
+  # 6. Execution Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/execution-service:latest', '-f', 'services/execution-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/execution-service:latest']
+
+  # 7. Terminal Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/terminal-service:latest', '-f', 'services/terminal-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/terminal-service:latest']
+
+  # 8. Collaboration Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/collaboration-service:latest', '-f', 'services/collaboration-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/collaboration-service:latest']
+
+  # 9. Chat Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/chat-service:latest', '-f', 'services/chat-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/chat-service:latest']
+
+  # 10. History Service
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_REGISTRY}/history-service:latest', '-f', 'services/history-service/Dockerfile', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGISTRY}/history-service:latest']
+
+substitutions:
+  _REGISTRY: 'us-central1-docker.pkg.dev/mirage-ide-prod/mirage-images'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  env:
+    - 'DOCKER_BUILDKIT=1'

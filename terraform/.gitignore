@@ -1,0 +1,29 @@
+# Compiled files & local provider cache
+.terraform/
+.terraform.lock.hcl
+
+# State files & backup state files (contain sensitive attributes & passwords)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Sensitive variables files (never commit real passwords or GCP project IDs)
+*.tfvars
+*.tfvars.json
+
+# Exception: Keep the example template
+!terraform.tfvars.example
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration files
+.terraformrc
+terraform.rc
