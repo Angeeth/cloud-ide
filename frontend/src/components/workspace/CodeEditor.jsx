@@ -2,6 +2,7 @@ import React, { useContext, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { WorkspaceContext } from '../../context/WorkspaceContext';
 import Logo from '../common/Logo';
+import { setupIntelliSense } from '../../utils/monacoIntelliSense';
 
 function getLanguage(filename = '') {
   const ext = filename.split('.').pop().toLowerCase();
@@ -163,6 +164,8 @@ export default function CodeEditor() {
   const language = getLanguage(activeFile.name);
 
   const handleEditorWillMount = (monaco) => {
+    setupIntelliSense(monaco);
+
     monaco.editor.defineTheme('mirage-obsidian-dark', {
       base: 'vs-dark',
       inherit: true,
@@ -185,7 +188,17 @@ export default function CodeEditor() {
         'editor.selectionBackground': '#27272a',
         'editor.inactiveSelectionBackground': '#18181b',
         'editorIndentGuide.background': '#27272a',
-        'editorIndentGuide.activeBackground': '#6366f1'
+        'editorIndentGuide.activeBackground': '#6366f1',
+        // VS Code IntelliSense Widget Theme
+        'editorSuggestWidget.background': '#18181b',
+        'editorSuggestWidget.border': '#27272a',
+        'editorSuggestWidget.foreground': '#f4f4f5',
+        'editorSuggestWidget.selectedBackground': '#27272a',
+        'editorSuggestWidget.highlightForeground': '#818cf8',
+        'editorSuggestWidget.focusBorder': '#818cf8',
+        'editorHoverWidget.background': '#18181b',
+        'editorHoverWidget.border': '#27272a',
+        'editorGhostText.foreground': 'rgba(161, 161, 170, 0.5)'
       }
     });
   };
@@ -253,7 +266,62 @@ export default function CodeEditor() {
           lineNumbers: 'on',
           smoothScrolling: true,
           cursorBlinking: 'smooth',
-          cursorSmoothCaretAnimation: 'on'
+          cursorSmoothCaretAnimation: 'on',
+
+          // VS Code Auto-Write & IntelliSense Engine
+          quickSuggestions: {
+            other: true,
+            comments: false,
+            strings: false
+          },
+          quickSuggestionsDelay: 40,
+          suggestOnTriggerCharacters: true,
+          acceptSuggestionOnEnter: 'smart',
+          tabCompletion: 'on',
+          acceptSuggestionOnCommitCharacter: false,
+          snippetSuggestions: 'inline',
+          suggestSelection: 'first',
+          wordBasedSuggestions: 'allDocuments',
+          suggest: {
+            preview: true,
+            showWords: true,
+            showSnippets: true,
+            showFunctions: true,
+            showKeywords: true,
+            showVariables: true,
+            showClasses: true,
+            showMethods: true,
+            showProperties: true,
+            showConstants: true,
+            showEnums: true,
+            showInterfaces: true,
+            showModules: true,
+            showStructs: true,
+            showEvents: true,
+            showOperators: true,
+            showUnits: true,
+            showValues: true,
+            showFolders: true,
+            showFiles: true,
+            showReferences: true,
+            showColors: true,
+            showTypeParameters: true,
+            insertMode: 'insert',
+            filterGraceful: true,
+            shareSuggestSelections: true,
+            localityBonus: true
+          },
+          parameterHints: {
+            enabled: true,
+            cycle: true
+          },
+          autoClosingBrackets: 'always',
+          autoClosingQuotes: 'always',
+          autoClosingDelete: 'always',
+          autoClosingOvertype: 'always',
+          autoSurround: 'languageDefined',
+          formatOnType: true,
+          formatOnPaste: true
         }}
         onChange={(value) => {
           if (canEdit && value !== undefined) {

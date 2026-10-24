@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from services.terminal_service import TerminalService
@@ -7,6 +8,7 @@ router = APIRouter(prefix="/projects/{project_id}/terminal", tags=["Terminal"])
 
 class TerminalCommandRequest(BaseModel):
     command: str
+    cwd: Optional[str] = None
 
 @router.post("")
 def execute_terminal_command(
@@ -14,4 +16,4 @@ def execute_terminal_command(
     req: TerminalCommandRequest,
     current_user: UserClaims = Depends(get_current_user_claims)
 ):
-    return TerminalService.execute_command(project_id, req.command, current_user)
+    return TerminalService.execute_command(project_id, req.command, current_user, cwd=req.cwd)

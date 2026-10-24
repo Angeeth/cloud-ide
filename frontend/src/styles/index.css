@@ -300,3 +300,39 @@ select.input-field option:checked {
 .remote-selection-orange { background-color: rgba(251, 146, 60, 0.25) !important; }
 .remote-selection-teal { background-color: rgba(45, 212, 191, 0.25) !important; }
 
+
+/* ==================== Monaco IntelliSense Suggest Widget Styling ==================== */
+.monaco-editor .suggest-widget {
+  border-radius: 8px !important;
+  border: 1px solid #27272a !important;
+  box-shadow: 0 14px 35px -4px rgba(0, 0, 0, 0.75), 0 4px 12px -2px rgba(0, 0, 0, 0.5) !important;
+  background-color: rgba(24, 24, 27, 0.95) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  overflow: hidden !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row {
+  border-radius: 4px !important;
+  transition: background-color 0.1s ease !important;
+  font-family: 'Fira Code', Consolas, monospace !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row.focused {
+  background-color: #27272a !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row .monaco-icon-label .label-name {
+  color: #fafafa !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row.focused .monaco-icon-label .label-name {
+  color: #ffffff !important;
+}
+
+.monaco-editor .suggest-widget .suggest-status-bar {
+  border-top: 1px solid #27272a !important;
+  background-color: #121215 !important;
+  color: #71717a !important;
+  font-size: 11px !important;
+}

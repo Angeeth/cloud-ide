@@ -1,13 +1,37 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import httpx
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import HTTPException, status
 from config import settings
 from shared.common.auth import UserClaims
 
 class TerminalService:
+    # In-memory dictionary tracking current working directory per project session
+    # key: f"{project_id}:{user_id}" -> relative cwd path (e.g., "" for root, "test2" for test2)
+    _cwds: Dict[str, str] = {}
+    _old_cwds: Dict[str, str] = {}
+
+    @classmethod
+    def _format_display_path(cls, rel_cwd: str) -> str:
+        if not rel_cwd or rel_cwd == ".":
+            return "~/workspace"
+        clean = rel_cwd.replace("\\", "/").strip("/")
+        return f"~/workspace/{clean}"
+
+    @classmethod
+    def _get_effective_cwd(cls, project_id: str, user_id: str, requested_cwd: Optional[str]) -> str:
+        session_key = f"{project_id}:{user_id}"
+        if requested_cwd is not None:
+            clean = requested_cwd.strip().replace("\\", "/").strip("/")
+            if clean.startswith("..") or clean == ".":
+                clean = ""
+            cls._cwds[session_key] = clean
+            return clean
+        return cls._cwds.get(session_key, "")
+
     @staticmethod
     def _verify_permission(project_id: str, current_user: UserClaims) -> str:
         role = "OWNER"
@@ -63,36 +87,25 @@ class TerminalService:
         except Exception as e:
             print(f"Warning: could not sync workspace back to file-service: {e}")
 
-    @staticmethod
-    def execute_command(project_id: str, command: str, current_user: UserClaims) -> Dict[str, Any]:
-        role = TerminalService._verify_permission(project_id, current_user)
+    @classmethod
+    def execute_command(
+        cls,
+        project_id: str,
+        command: str,
+        current_user: UserClaims,
+        cwd: Optional[str] = None
+    ) -> Dict[str, Any]:
+        role = cls._verify_permission(project_id, current_user)
         cmd = command.strip()
+        session_key = f"{project_id}:{current_user.id}"
 
-        if not cmd:
-            return {"output": "", "exit_code": 0}
-
-        # Fast built-ins
-        if cmd == "clear":
-            return {"output": "", "clear": True, "exit_code": 0}
-        if cmd == "whoami":
-            return {"output": f"{current_user.name or current_user.id} ({current_user.email or ''}) - [{role}]", "exit_code": 0}
-        if cmd == "pwd":
-            return {"output": f"/workspace/{project_id}", "exit_code": 0}
-        if cmd == "help":
-            help_text = (
-                "Mirage Terminal v1.0 (Microservices Architecture)\n"
-                "Supported Commands: ls, cd, cat <file>, python <file>, node <file>, gcc <file>, mkdir, touch, pwd, whoami, clear\n"
-                "Persistent Project Directory synced with File Service."
-            )
-            return {"output": help_text, "exit_code": 0}
-
-        # Setup persistent workspace directory
+        # Setup persistent workspace directory on disk
         workspace_base = os.path.join(tempfile.gettempdir(), "mirage_workspaces")
         os.makedirs(workspace_base, exist_ok=True)
         workspace_dir = os.path.join(workspace_base, project_id)
         os.makedirs(workspace_dir, exist_ok=True)
 
-        # Sync files from file-service
+        # Sync files from file-service into workspace
         try:
             with httpx.Client(timeout=10.0) as client:
                 res = client.get(f"{settings.FILE_SERVICE_URL}/projects/{project_id}/files/raw")
@@ -115,72 +128,327 @@ class TerminalService:
         except Exception as e:
             print(f"Warning: could not sync files from file-service: {e}")
 
-        # Handle 'ls' or 'dir'
-        if cmd in ("ls", "dir", "ls -l", "ls -a"):
-            items = []
-            for root, dirs, files_list in os.walk(workspace_dir):
-                rel_root = os.path.relpath(root, workspace_dir)
-                if rel_root == ".":
-                    rel_root = ""
-                for d in dirs:
-                    path_str = os.path.join(rel_root, d).replace("\\", "/")
-                    if not rel_root:
-                        items.append(f"{path_str}/")
-                for fl in files_list:
-                    path_str = os.path.join(rel_root, fl).replace("\\", "/")
-                    items.append(path_str)
-            top_items = set()
-            for item in items:
-                parts = item.split('/')
-                if len(parts) > 1 and parts[0]:
-                    top_items.add(f"{parts[0]}/")
-                elif parts[0]:
-                    top_items.add(parts[0])
-            return {"output": "  ".join(sorted(top_items)) if top_items else "", "exit_code": 0}
+        # Determine effective working directory
+        current_rel_cwd = cls._get_effective_cwd(project_id, current_user.id, cwd)
+        effective_cwd = os.path.normpath(os.path.join(workspace_dir, current_rel_cwd.replace("/", os.sep)))
 
-        # Handle 'cat <filename>'
+        # Boundary check: ensure effective_cwd does not escape workspace_dir
+        try:
+            if not effective_cwd.startswith(workspace_dir):
+                effective_cwd = workspace_dir
+                current_rel_cwd = ""
+                cls._cwds[session_key] = ""
+        except Exception:
+            effective_cwd = workspace_dir
+            current_rel_cwd = ""
+            cls._cwds[session_key] = ""
+
+        # If effective_cwd doesn't exist on disk, fallback to workspace_dir
+        if not os.path.exists(effective_cwd) or not os.path.isdir(effective_cwd):
+            effective_cwd = workspace_dir
+            current_rel_cwd = ""
+            cls._cwds[session_key] = ""
+
+        display_cwd = cls._format_display_path(current_rel_cwd)
+
+        if not cmd:
+            return {"output": "", "exit_code": 0, "cwd": current_rel_cwd, "display_cwd": display_cwd}
+
+        # Fast built-ins
+        if cmd == "clear":
+            return {"output": "", "clear": True, "exit_code": 0, "cwd": current_rel_cwd, "display_cwd": display_cwd}
+
+        if cmd == "whoami":
+            return {
+                "output": f"{current_user.name or current_user.id} ({current_user.email or ''}) - [{role}]",
+                "exit_code": 0,
+                "cwd": current_rel_cwd,
+                "display_cwd": display_cwd
+            }
+
+        if cmd == "pwd":
+            pwd_out = "/workspace" if not current_rel_cwd else f"/workspace/{current_rel_cwd}"
+            return {
+                "output": pwd_out,
+                "exit_code": 0,
+                "cwd": current_rel_cwd,
+                "display_cwd": display_cwd
+            }
+
+        if cmd == "help":
+            help_text = (
+                "Mirage Linux Terminal v1.1\n"
+                "Supported Commands: cd <dir>, pwd, ls [-la], cat <file>, touch <file>, mkdir <dir>, rm [-rf] <file/dir>, python <file>, node <file>, gcc <file>, whoami, clear\n"
+                "Full Linux directory navigation and persistence with real-time file-service sync."
+            )
+            return {
+                "output": help_text,
+                "exit_code": 0,
+                "cwd": current_rel_cwd,
+                "display_cwd": display_cwd
+            }
+
+        # ==========================================
+        # LINUX 'cd' COMMAND HANDLER
+        # ==========================================
+        if cmd == "cd" or cmd.startswith("cd ") or cmd.startswith("cd\t"):
+            target = cmd[2:].strip().strip("\"'")
+            old_rel = current_rel_cwd
+
+            # cd without arguments, or ~, or ~/workspace, or /workspace moves to root
+            if not target or target in ("~", "~/", "~/workspace", "/workspace", "/workspace/", "/"):
+                new_rel = ""
+                cls._old_cwds[session_key] = old_rel
+                cls._cwds[session_key] = new_rel
+                return {
+                    "output": "",
+                    "exit_code": 0,
+                    "cwd": new_rel,
+                    "display_cwd": cls._format_display_path(new_rel)
+                }
+
+            # cd - switches back to previous directory (like bash)
+            if target == "-":
+                prev_rel = cls._old_cwds.get(session_key, "")
+                prev_path = os.path.normpath(os.path.join(workspace_dir, prev_rel.replace("/", os.sep)))
+                if not os.path.exists(prev_path) or not os.path.isdir(prev_path):
+                    prev_rel = ""
+                cls._old_cwds[session_key] = old_rel
+                cls._cwds[session_key] = prev_rel
+                disp = cls._format_display_path(prev_rel)
+                return {
+                    "output": disp,
+                    "exit_code": 0,
+                    "cwd": prev_rel,
+                    "display_cwd": disp
+                }
+
+            # Normalize target path
+            if target.startswith("~/workspace/"):
+                target_rel = target[len("~/workspace/"):].lstrip("/")
+                base_dir = workspace_dir
+            elif target.startswith("/workspace/"):
+                target_rel = target[len("/workspace/"):].lstrip("/")
+                base_dir = workspace_dir
+            elif target.startswith("~/"):
+                target_rel = target[2:].lstrip("/")
+                base_dir = workspace_dir
+            elif target.startswith("/"):
+                target_rel = target.lstrip("/")
+                base_dir = workspace_dir
+            else:
+                target_rel = target
+                base_dir = effective_cwd
+
+            candidate_path = os.path.normpath(os.path.join(base_dir, target_rel.replace("/", os.sep)))
+
+            # Sandboxing: Ensure path does not escape workspace_dir
+            try:
+                common = os.path.commonpath([workspace_dir, candidate_path])
+                if common != workspace_dir:
+                    candidate_path = workspace_dir
+            except Exception:
+                candidate_path = workspace_dir
+
+            # If not found directly, try case-insensitive match on directory name
+            if not os.path.exists(candidate_path):
+                parent = os.path.dirname(candidate_path)
+                base_name = os.path.basename(candidate_path).lower()
+                if os.path.exists(parent) and os.path.isdir(parent):
+                    for entry in os.listdir(parent):
+                        if entry.lower() == base_name:
+                            candidate_path = os.path.join(parent, entry)
+                            break
+
+            # Error cases matching standard Linux bash
+            if not os.path.exists(candidate_path):
+                return {
+                    "output": f"cd: {target}: No such file or directory",
+                    "exit_code": 1,
+                    "cwd": current_rel_cwd,
+                    "display_cwd": display_cwd
+                }
+
+            if not os.path.isdir(candidate_path):
+                return {
+                    "output": f"cd: {target}: Not a directory",
+                    "exit_code": 1,
+                    "cwd": current_rel_cwd,
+                    "display_cwd": display_cwd
+                }
+
+            # Successfully resolved directory
+            new_rel = os.path.relpath(candidate_path, workspace_dir).replace("\\", "/")
+            if new_rel == ".":
+                new_rel = ""
+
+            cls._old_cwds[session_key] = old_rel
+            cls._cwds[session_key] = new_rel
+
+            return {
+                "output": "",
+                "exit_code": 0,
+                "cwd": new_rel,
+                "display_cwd": cls._format_display_path(new_rel)
+            }
+
+        # ==========================================
+        # LINUX 'ls' / 'dir' HANDLER
+        # ==========================================
+        cmd_tokens = cmd.split()
+        if cmd_tokens and cmd_tokens[0] in ("ls", "dir"):
+            args = cmd_tokens[1:]
+            show_all = any("-a" in a for a in args) or any("-la" in a or "-al" in a for a in args)
+
+            target_list_dir = effective_cwd
+            path_args = [a for a in args if not a.startswith("-")]
+            if path_args:
+                p_arg = path_args[0].strip("\"'")
+                c_path = os.path.normpath(os.path.join(effective_cwd, p_arg.replace("/", os.sep)))
+                if os.path.exists(c_path) and os.path.isdir(c_path):
+                    target_list_dir = c_path
+                elif not os.path.exists(c_path):
+                    return {
+                        "output": f"ls: cannot access '{p_arg}': No such file or directory",
+                        "exit_code": 2,
+                        "cwd": current_rel_cwd,
+                        "display_cwd": display_cwd
+                    }
+
+            # On Linux container with real ls binary:
+            if shutil.which("ls"):
+                try:
+                    proc_cmd = cmd if any(a.startswith("-") for a in args) else "ls -F --color=never"
+                    proc = subprocess.Popen(
+                        proc_cmd,
+                        shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        cwd=target_list_dir
+                    )
+                    stdout, stderr = proc.communicate(timeout=settings.COMMAND_TIMEOUT_SECONDS)
+                    out = stdout or ""
+                    if stderr:
+                        out += ("\n" + stderr if out else stderr)
+                    return {
+                        "output": out.rstrip(),
+                        "exit_code": proc.returncode,
+                        "cwd": current_rel_cwd,
+                        "display_cwd": display_cwd
+                    }
+                except Exception:
+                    pass
+
+            # Python fallback: format entries with directories followed by '/'
+            try:
+                entries = sorted(os.scandir(target_list_dir), key=lambda e: (not e.is_dir(), e.name.lower()))
+                items = []
+                for e in entries:
+                    if not show_all and e.name.startswith("."):
+                        continue
+                    items.append(f"{e.name}/" if e.is_dir() else e.name)
+                return {
+                    "output": "  ".join(items) if items else "",
+                    "exit_code": 0,
+                    "cwd": current_rel_cwd,
+                    "display_cwd": display_cwd
+                }
+            except Exception as e:
+                return {
+                    "output": f"ls: {str(e)}",
+                    "exit_code": 1,
+                    "cwd": current_rel_cwd,
+                    "display_cwd": display_cwd
+                }
+
+        # ==========================================
+        # LINUX 'touch' HANDLER (with Windows host fallback)
+        # ==========================================
+        if cmd.startswith("touch "):
+            target_file = cmd[6:].strip().strip("\"'")
+            if not shutil.which("touch"):
+                target_path = os.path.normpath(os.path.join(effective_cwd, target_file.replace("/", os.sep)))
+                try:
+                    common = os.path.commonpath([workspace_dir, target_path])
+                    if common == workspace_dir:
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        open(target_path, "a", encoding="utf-8").close()
+                        cls._sync_workspace_to_file_service(project_id, workspace_dir)
+                        return {
+                            "output": "",
+                            "exit_code": 0,
+                            "cwd": current_rel_cwd,
+                            "display_cwd": display_cwd
+                        }
+                except Exception as e:
+                    return {
+                        "output": f"touch: cannot touch '{target_file}': {str(e)}",
+                        "exit_code": 1,
+                        "cwd": current_rel_cwd,
+                        "display_cwd": display_cwd
+                    }
+
+        # ==========================================
+        # LINUX 'cat' HANDLER
+        # ==========================================
         if cmd.startswith("cat "):
-            target = cmd[4:].strip()
-            target_path = os.path.join(workspace_dir, target.replace("/", os.sep))
+            target = cmd[4:].strip().strip("\"'")
+            target_path = os.path.normpath(os.path.join(effective_cwd, target.replace("/", os.sep)))
             if not os.path.exists(target_path):
-                target_src = os.path.join(workspace_dir, "src", target.replace("/", os.sep))
-                if os.path.exists(target_src):
-                    target_path = target_src
+                root_path = os.path.normpath(os.path.join(workspace_dir, target.replace("/", os.sep)))
+                if os.path.exists(root_path):
+                    target_path = root_path
 
             if os.path.exists(target_path) and os.path.isfile(target_path):
-                with open(target_path, "r", encoding="utf-8", errors="replace") as f:
-                    return {"output": f.read(), "exit_code": 0}
-            return {"output": f"cat: {target}: No such file or directory", "exit_code": 1}
+                try:
+                    with open(target_path, "r", encoding="utf-8", errors="replace") as f:
+                        return {
+                            "output": f.read(),
+                            "exit_code": 0,
+                            "cwd": current_rel_cwd,
+                            "display_cwd": display_cwd
+                        }
+                except Exception as e:
+                    return {
+                        "output": f"cat: {target}: {str(e)}",
+                        "exit_code": 1,
+                        "cwd": current_rel_cwd,
+                        "display_cwd": display_cwd
+                    }
+            return {
+                "output": f"cat: {target}: No such file or directory",
+                "exit_code": 1,
+                "cwd": current_rel_cwd,
+                "display_cwd": display_cwd
+            }
 
-        # Auto-path and case resolution for script and compile commands
+        # ==========================================
+        # SCRIPT RUNNER RESOLUTION (python, node, etc.)
+        # ==========================================
         cmd_parts = cmd.split(maxsplit=1)
         if len(cmd_parts) == 2:
-            runner, arg = cmd_parts[0], cmd_parts[1].strip()
+            runner, arg = cmd_parts[0], cmd_parts[1].strip().strip("\"'")
             if runner in ("python", "python3", "node", "gcc", "g++", "javac", "java"):
-                arg_path = os.path.join(workspace_dir, arg.replace("/", os.sep))
+                arg_path = os.path.join(effective_cwd, arg.replace("/", os.sep))
                 if not os.path.exists(arg_path):
                     try:
                         matched = False
-                        for f in os.listdir(workspace_dir):
+                        for f in os.listdir(effective_cwd):
                             if f.lower() == arg.lower():
                                 cmd = f"{runner} {f}"
                                 matched = True
                                 break
-                        if not matched:
-                            arg_src_path = os.path.join(workspace_dir, "src", arg.replace("/", os.sep))
-                            if os.path.exists(arg_src_path):
-                                cmd = f"{runner} src/{arg}"
-                            else:
-                                src_dir = os.path.join(workspace_dir, "src")
-                                if os.path.exists(src_dir):
-                                    for f in os.listdir(src_dir):
-                                        if f.lower() == arg.lower():
-                                            cmd = f"{runner} src/{f}"
-                                            break
+                        if not matched and effective_cwd != workspace_dir:
+                            root_arg_path = os.path.join(workspace_dir, arg.replace("/", os.sep))
+                            if os.path.exists(root_arg_path):
+                                cmd = f"{runner} {root_arg_path}"
                     except Exception:
                         pass
 
-        # Run command in workspace
+        # ==========================================
+        # GENERAL SUBPROCESS EXECUTION IN CWD
+        # ==========================================
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -188,19 +456,34 @@ class TerminalService:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=workspace_dir
+                cwd=effective_cwd
             )
             stdout, stderr = proc.communicate(timeout=settings.COMMAND_TIMEOUT_SECONDS)
-            output = stdout
+            output = stdout or ""
             if stderr:
                 output += ("\n" + stderr if output else stderr)
 
-            # Sync workspace disk changes (folders, files) back to file-service
-            TerminalService._sync_workspace_to_file_service(project_id, workspace_dir)
+            # Sync workspace disk changes back to file-service
+            cls._sync_workspace_to_file_service(project_id, workspace_dir)
 
-            return {"output": output or "", "exit_code": proc.returncode}
+            return {
+                "output": output or "",
+                "exit_code": proc.returncode,
+                "cwd": current_rel_cwd,
+                "display_cwd": display_cwd
+            }
         except subprocess.TimeoutExpired:
             proc.kill()
-            return {"output": f"Command execution timed out after {settings.COMMAND_TIMEOUT_SECONDS}s.", "exit_code": 124}
+            return {
+                "output": f"Command execution timed out after {settings.COMMAND_TIMEOUT_SECONDS}s.",
+                "exit_code": 124,
+                "cwd": current_rel_cwd,
+                "display_cwd": display_cwd
+            }
         except Exception as e:
-            return {"output": f"Terminal error: {str(e)}", "exit_code": 1}
+            return {
+                "output": f"Terminal error: {str(e)}",
+                "exit_code": 1,
+                "cwd": current_rel_cwd,
+                "display_cwd": display_cwd
+            }

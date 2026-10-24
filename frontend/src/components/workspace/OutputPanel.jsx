@@ -9,8 +9,10 @@ export default function OutputPanel() {
   
   // Terminal State
   const [terminalHistory, setTerminalHistory] = useState([
-    { type: 'sys', text: 'Mirage Terminal v1.0. Type "help" for a list of commands.' }
+    { type: 'sys', text: 'Mirage Terminal v1.1. Type "help" for a list of commands.' }
   ]);
+  const [terminalCwd, setTerminalCwd] = useState('');
+  const [displayPrompt, setDisplayPrompt] = useState('~/workspace');
   const [currentInput, setCurrentInput] = useState('');
   const [isExecTerminal, setIsExecTerminal] = useState(false);
   const [commandHistory, setCommandHistory] = useState([]);
@@ -22,6 +24,11 @@ export default function OutputPanel() {
 
   // History State
   const [historyList, setHistoryList] = useState([]);
+
+  useEffect(() => {
+    setTerminalCwd('');
+    setDisplayPrompt('~/workspace');
+  }, [project?.id]);
 
   useEffect(() => {
     if (activeTab === 'history' && project) {
@@ -78,7 +85,8 @@ export default function OutputPanel() {
     setHistoryIndex(-1);
     tempInputRef.current = '';
 
-    const newHistory = [...terminalHistory, { type: 'cmd', text: cmd }];
+    const activePrompt = displayPrompt;
+    const newHistory = [...terminalHistory, { type: 'cmd', text: cmd, prompt: activePrompt }];
     setTerminalHistory(newHistory);
     setCurrentInput('');
 
@@ -89,7 +97,18 @@ export default function OutputPanel() {
 
     setIsExecTerminal(true);
     try {
-      const res = await api.post(`/projects/${project.id}/terminal`, { command: cmd });
+      const res = await api.post(`/projects/${project.id}/terminal`, {
+        command: cmd,
+        cwd: terminalCwd
+      });
+
+      if (res.data.cwd !== undefined) {
+        setTerminalCwd(res.data.cwd);
+      }
+      if (res.data.display_cwd) {
+        setDisplayPrompt(res.data.display_cwd);
+      }
+
       if (res.data.clear) {
         setTerminalHistory([]);
       } else {
@@ -266,8 +285,8 @@ export default function OutputPanel() {
                 )}
                 {item.type === 'cmd' && (
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ color: '#10b981', fontWeight: '600', marginRight: '0.5rem' }}>
-                      mirage@cloud-ide:~/workspace$
+                    <span style={{ color: '#10b981', fontWeight: '600', marginRight: '0.5rem', whiteSpace: 'nowrap' }}>
+                      mirage@cloud-ide:{item.prompt || '~/workspace'}$
                     </span>
                     <span style={{ color: '#fafafa' }}>{item.text}</span>
                   </div>
@@ -294,7 +313,7 @@ export default function OutputPanel() {
             {/* Continuous Inline Terminal Prompt Line */}
             <form onSubmit={handleTerminalSubmit} style={{ display: 'flex', alignItems: 'center', margin: 0, padding: 0 }}>
               <span style={{ color: '#10b981', fontWeight: '600', marginRight: '0.5rem', whiteSpace: 'nowrap' }}>
-                mirage@cloud-ide:~/workspace$
+                mirage@cloud-ide:{displayPrompt}$
               </span>
               <input
                 ref={terminalInputRef}
