@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { WorkspaceContext } from '../../context/WorkspaceContext';
 import { History, Plus, RotateCcw } from 'lucide-react';
+import { formatLocalDateTime } from '../../utils/formatDate';
 
 export default function HistoryPanel() {
   const { project, historyList, fetchHistory, createSnapshot, restoreVersion } = useContext(WorkspaceContext);
@@ -107,7 +108,7 @@ export default function HistoryPanel() {
                   Version {ver.version_number}
                 </span>
                 <span style={{ fontSize: '0.7rem', color: '#8b949e' }}>
-                  {new Date(ver.created_at).toLocaleDateString()} {new Date(ver.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {formatLocalDateTime(ver.created_at)}
                 </span>
               </div>
               <p style={{ fontSize: '0.75rem', color: '#f0f6fc', marginBottom: '0.35rem' }}>

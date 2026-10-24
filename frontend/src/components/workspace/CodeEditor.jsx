@@ -1,6 +1,7 @@
 import React, { useContext, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { WorkspaceContext } from '../../context/WorkspaceContext';
+import { AuthContext } from '../../context/AuthContext';
 import Logo from '../common/Logo';
 import { setupIntelliSense } from '../../utils/monacoIntelliSense';
 
@@ -45,6 +46,7 @@ function getCollabColor(id = '') {
 }
 
 export default function CodeEditor() {
+  const { user } = useContext(AuthContext);
   const {
     activeFile,
     fileContents,
@@ -61,9 +63,52 @@ export default function CodeEditor() {
   const decorationsRef = useRef([]);
   const throttleRef = useRef(null);
   const activeFileRef = useRef(activeFile);
+  const isApplyingRemoteRef = useRef(false);
 
   useEffect(() => {
     activeFileRef.current = activeFile;
+  }, [activeFile]);
+
+  // Synchronize remote file changes without resetting or shifting the local user's cursor
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeFile) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const remoteContent = fileContents[activeFile.id];
+    if (remoteContent === undefined) return;
+
+    const localContent = model.getValue();
+    if (remoteContent === localContent) return;
+
+    // 1. Capture local user's active cursor position and viewport
+    const prevPosition = editor.getPosition();
+    const prevSelection = editor.getSelection();
+    const prevScrollTop = editor.getScrollTop();
+    const prevScrollLeft = editor.getScrollLeft();
+
+    // 2. Suppress local onChange echo broadcast
+    isApplyingRemoteRef.current = true;
+
+    // 3. Apply edit cleanly across model range
+    editor.executeEdits('remote-collaborator', [
+      {
+        range: model.getFullModelRange(),
+        text: remoteContent,
+        forceMoveMarkers: true
+      }
+    ]);
+
+    // 4. Restore local user's cursor position and viewport immediately
+    if (prevPosition) editor.setPosition(prevPosition);
+    if (prevSelection) editor.setSelection(prevSelection);
+    editor.setScrollTop(prevScrollTop);
+    editor.setScrollLeft(prevScrollLeft);
+
+    setTimeout(() => {
+      isApplyingRemoteRef.current = false;
+    }, 50);
   }, [activeFile]);
 
   // Synchronize and render real-time collaborator cursors, line highlights, and name labels
@@ -78,7 +123,7 @@ export default function CodeEditor() {
     }
 
     const relevantCursors = Object.values(remoteCursors || {}).filter(
-      (c) => c && c.fileId === activeFile.id && c.position && c.position.lineNumber
+      (c) => c && c.fileId === activeFile.id && c.senderId !== user?.id && c.position && c.position.lineNumber
     );
 
     const newDecorations = [];
@@ -124,7 +169,7 @@ export default function CodeEditor() {
     });
 
     decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
-  }, [remoteCursors, activeFile]);
+  }, [remoteCursors, activeFile, user?.id]);
 
   // Clean up decorations on unmount
   useEffect(() => {
@@ -248,9 +293,10 @@ export default function CodeEditor() {
   return (
     <div style={{ flex: 1, width: '100%', height: '100%', backgroundColor: '#121215', overflow: 'hidden' }}>
       <Editor
+        key={activeFile.id}
         height="100%"
         language={language}
-        value={content}
+        defaultValue={content}
         theme="mirage-obsidian-dark"
         beforeMount={handleEditorWillMount}
         onMount={handleEditorMount}
@@ -324,6 +370,7 @@ export default function CodeEditor() {
           formatOnPaste: true
         }}
         onChange={(value) => {
+          if (isApplyingRemoteRef.current) return;
           if (canEdit && value !== undefined) {
             updateFileContent(activeFile.id, value, true);
           }

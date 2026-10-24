@@ -118,13 +118,28 @@ class TerminalService:
                         with open(full_p, "w", encoding="utf-8") as f:
                             f.write(content or "")
 
+                expected_files = {rel_p.lstrip("/\\").replace("/", os.sep) for rel_p in files_dict.keys()}
+                expected_folders = set()
                 # Also sync folders from file-service
                 folders_res = client.get(f"{settings.FILE_SERVICE_URL}/projects/{project_id}/folders/raw")
                 if folders_res.status_code == 200:
                     for rel_f in folders_res.json():
                         clean_f = rel_f.lstrip("/\\")
-                        f_full = os.path.join(workspace_dir, clean_f.replace("/", os.sep))
+                        clean_norm = clean_f.replace("/", os.sep)
+                        expected_folders.add(clean_norm)
+                        f_full = os.path.join(workspace_dir, clean_norm)
                         os.makedirs(f_full, exist_ok=True)
+
+                # Prune orphan folders on disk so terminal matches database tree
+                for root, dirs, files_on_disk in os.walk(workspace_dir, topdown=False):
+                    rel = os.path.relpath(root, workspace_dir)
+                    if rel != "." and not any(p.startswith(".") for p in rel.split(os.sep)):
+                        if rel not in expected_folders and not any(ef.startswith(rel + os.sep) for ef in expected_files):
+                            try:
+                                if not os.listdir(root):
+                                    os.rmdir(root)
+                            except Exception:
+                                pass
         except Exception as e:
             print(f"Warning: could not sync files from file-service: {e}")
 

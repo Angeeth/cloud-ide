@@ -2,6 +2,7 @@ import React, { useState, useContext, useEffect, useRef } from 'react';
 import { WorkspaceContext } from '../../context/WorkspaceContext';
 import { AuthContext } from '../../context/AuthContext';
 import { Send, MessageSquare } from 'lucide-react';
+import { formatLocalTime } from '../../utils/formatDate';
 
 export default function ChatPanel() {
   const { chatMessages, sendChatMessage } = useContext(WorkspaceContext);
@@ -64,7 +65,7 @@ export default function ChatPanel() {
                 alignItems: isMe ? 'flex-end' : 'flex-start'
               }}>
                 <div style={{ fontSize: '0.7rem', color: '#8b949e', marginBottom: '0.15rem' }}>
-                  {senderName} • {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {senderName} • {formatLocalTime(msg.created_at)}
                 </div>
                 <div style={{
                   padding: '0.5rem 0.75rem',

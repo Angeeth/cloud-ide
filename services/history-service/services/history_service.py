@@ -48,18 +48,26 @@ class HistoryService:
         ).order_by(ProjectVersion.version_number.desc()).first()
         next_ver_num = (latest_version.version_number + 1) if latest_version else 1
 
-        # Fetch files from file-service
+        # Fetch files and folders from file-service
         files_dict = {}
+        folders_list = []
         try:
             with httpx.Client(timeout=10.0) as client:
                 res = client.get(f"{settings.FILE_SERVICE_URL}/projects/{project_id}/files/raw")
                 if res.status_code == 200:
                     files_dict = res.json()
+                res_folders = client.get(f"{settings.FILE_SERVICE_URL}/projects/{project_id}/folders/raw")
+                if res_folders.status_code == 200:
+                    folders_list = res_folders.json()
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch files from file-service: {e}")
 
+        snapshot_payload = {
+            "files": files_dict,
+            "folders": folders_list
+        }
         snapshot_key = f"snapshots/{project_id}/v{next_ver_num}.json"
-        storage_manager.save_file(snapshot_key, json.dumps(files_dict, indent=2))
+        storage_manager.save_file(snapshot_key, json.dumps(snapshot_payload, indent=2))
 
         version_obj = ProjectVersion(
             project_id=project_id,
@@ -105,17 +113,28 @@ class HistoryService:
         if not snapshot_json:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to load snapshot payload")
 
-        files_dict = json.loads(snapshot_json)
-        batch_files = [{"path": p, "content": c} for p, c in files_dict.items()]
+        raw_payload = json.loads(snapshot_json)
+        if isinstance(raw_payload, dict) and "files" in raw_payload:
+            files_dict = raw_payload.get("files", {})
+            folders_list = raw_payload.get("folders", [])
+        else:
+            files_dict = raw_payload
+            folders_list = []
 
-        # 1. Clear existing files in file-service
+        # Prepare items for full filesystem sync (both files and folders)
+        sync_items = []
+        for f_path in folders_list:
+            sync_items.append({"path": f_path, "type": "folder", "content": ""})
+        for f_path, content in files_dict.items():
+            sync_items.append({"path": f_path, "type": "file", "content": content})
+
+        # 1. Clear existing files and sync full snapshot tree (files + folders) into file-service
         try:
             with httpx.Client(timeout=15.0) as client:
                 client.delete(f"{settings.FILE_SERVICE_URL}/projects/{project_id}/files-all")
-                # 2. Batch import snapshot files
                 client.post(
-                    f"{settings.FILE_SERVICE_URL}/projects/{project_id}/batch-import",
-                    json={"files": batch_files}
+                    f"{settings.FILE_SERVICE_URL}/projects/{project_id}/sync-fs",
+                    json={"items": sync_items}
                 )
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to restore files via file-service: {e}")

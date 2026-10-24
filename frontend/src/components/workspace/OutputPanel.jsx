@@ -2,6 +2,7 @@ import React, { useState, useContext, useEffect, useRef } from 'react';
 import { WorkspaceContext } from '../../context/WorkspaceContext';
 import api from '../../services/api';
 import { Terminal as TerminalIcon, Clock, CheckCircle, XCircle, Play } from 'lucide-react';
+import { formatLocalTime } from '../../utils/formatDate';
 
 export default function OutputPanel() {
   const { executionOutput, isExecuting, project, refreshFilesTree } = useContext(WorkspaceContext);
@@ -360,7 +361,7 @@ export default function OutputPanel() {
                     <span style={{ color: '#a1a1aa', marginLeft: '0.5rem' }}>({item.execution_time_ms}ms)</span>
                   </div>
                   <span style={{ color: '#71717a', fontSize: '0.75rem' }}>
-                    {new Date(item.created_at).toLocaleTimeString()}
+                    {formatLocalTime(item.created_at)}
                   </span>
                 </div>
               ))

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FolderGit2, Calendar, User, Trash2, ExternalLink } from 'lucide-react';
+import { formatLocalDate } from '../../utils/formatDate';
 
 export default function ProjectCard({ project, onDelete }) {
   const navigate = useNavigate();
@@ -46,7 +47,7 @@ export default function ProjectCard({ project, onDelete }) {
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <Calendar size={12} />
-            <span>{new Date(project.updated_at).toLocaleDateString()}</span>
+            <span>{formatLocalDate(project.updated_at)}</span>
           </div>
         </div>
 
