@@ -5,6 +5,7 @@ from database.session import get_db
 from schemas.file import (
     FileCreate,
     FileContentSave,
+    FileRenameRequest,
     FileResponse,
     StarterInitRequest,
     BatchImportRequest,
@@ -57,6 +58,15 @@ def save_file(
     current_user: UserClaims = Depends(get_current_user_claims)
 ):
     return FileService.save_file_content(db, file_id, save_in.content, current_user)
+
+@router.put("/files/{file_id}/rename")
+def rename_file(
+    file_id: str,
+    rename_in: FileRenameRequest,
+    db: Session = Depends(get_db),
+    current_user: UserClaims = Depends(get_current_user_claims)
+):
+    return FileService.rename_file(db, file_id, rename_in.name, current_user)
 
 @router.delete("/files/{file_id}")
 def delete_file(

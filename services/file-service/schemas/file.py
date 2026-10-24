@@ -12,6 +12,9 @@ class FileCreate(BaseModel):
 class FileUpdate(BaseModel):
     name: Optional[str] = None
 
+class FileRenameRequest(BaseModel):
+    name: str
+
 class FileContentSave(BaseModel):
     content: str
 

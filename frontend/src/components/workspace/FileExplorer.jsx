@@ -4,9 +4,11 @@ import api from '../../services/api';
 import { Folder, FileCode, ChevronRight, ChevronDown, Plus, FolderPlus, RefreshCw, Trash2, Edit2, Upload } from 'lucide-react';
 
 function TreeNode({ node, level = 0 }) {
-  const { openFile, activeFile, refreshFilesTree, project, unsavedFiles } = useContext(WorkspaceContext);
+  const { openFile, activeFile, refreshFilesTree, project, unsavedFiles, renameFile } = useContext(WorkspaceContext);
   const [expanded, setExpanded] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(node.name);
 
   const isFolder = node.type === 'folder';
   const isActive = activeFile && activeFile.id === node.id;
@@ -15,10 +17,47 @@ function TreeNode({ node, level = 0 }) {
 
   const handleClick = (e) => {
     e.stopPropagation();
+    if (isRenaming) return;
     if (isFolder) {
       setExpanded(!expanded);
     } else {
       openFile(node);
+    }
+  };
+
+  const handleStartRename = (e) => {
+    e.stopPropagation();
+    if (!canEdit) return;
+    setRenameValue(node.name);
+    setIsRenaming(true);
+  };
+
+  const handleRenameSubmit = async (e) => {
+    if (e) e.preventDefault();
+    const cleanName = renameValue.trim();
+    if (!cleanName || cleanName === node.name) {
+      setIsRenaming(false);
+      setRenameValue(node.name);
+      return;
+    }
+    try {
+      await renameFile(node.id, cleanName);
+      setIsRenaming(false);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to rename item');
+      setRenameValue(node.name);
+      setIsRenaming(false);
+    }
+  };
+
+  const handleRenameKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRenameSubmit(e);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsRenaming(false);
+      setRenameValue(node.name);
     }
   };
 
@@ -55,7 +94,7 @@ function TreeNode({ node, level = 0 }) {
         onMouseEnter={() => setShowMenu(true)}
         onMouseLeave={() => setShowMenu(false)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden', flex: 1 }}>
           {isFolder ? (
             expanded ? <ChevronDown size={14} color="#8b949e" /> : <ChevronRight size={14} color="#8b949e" />
           ) : (
@@ -68,21 +107,62 @@ function TreeNode({ node, level = 0 }) {
             <FileCode size={14} color="#a855f7" />
           )}
 
-          <span style={{
-            whiteSpace: 'nowrap',
-            textOverflow: 'ellipsis',
-            overflow: 'hidden',
-            fontFamily: isFolder ? 'inherit' : 'Fira Code, monospace',
-            fontWeight: isActive ? '600' : '400'
-          }}>
-            {node.name}
-          </span>
+          {isRenaming ? (
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={handleRenameKeyDown}
+              onBlur={handleRenameSubmit}
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+              onFocus={(e) => e.target.select()}
+              style={{
+                background: '#161b22',
+                border: '1px solid #818cf8',
+                borderRadius: '3px',
+                color: '#fafafa',
+                fontSize: '0.8125rem',
+                fontFamily: isFolder ? 'inherit' : 'Fira Code, monospace',
+                padding: '0.05rem 0.35rem',
+                outline: 'none',
+                width: '100%',
+                maxWidth: '160px'
+              }}
+            />
+          ) : (
+            <span style={{
+              whiteSpace: 'nowrap',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+              fontFamily: isFolder ? 'inherit' : 'Fira Code, monospace',
+              fontWeight: isActive ? '600' : '400'
+            }}>
+              {node.name}
+            </span>
+          )}
+
           {isUnsaved && <span style={{ color: '#eab308', fontWeight: 'bold' }}>•</span>}
         </div>
 
-        {showMenu && canEdit && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <Trash2 size={12} color="#ef4444" onClick={handleDelete} title="Delete" />
+        {showMenu && canEdit && !isRenaming && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+            <Edit2
+              size={12}
+              color="#a1a1aa"
+              onClick={handleStartRename}
+              title="Rename"
+              style={{ cursor: 'pointer', transition: 'color 0.15s ease' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#818cf8'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#a1a1aa'}
+            />
+            <Trash2
+              size={12}
+              color="#ef4444"
+              onClick={handleDelete}
+              title="Delete"
+              style={{ cursor: 'pointer' }}
+            />
           </div>
         )}
       </div>

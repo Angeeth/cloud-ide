@@ -234,6 +234,93 @@ class FileService:
         return project_id
 
     @staticmethod
+    def rename_file(db: Session, file_id: str, new_name: str, current_user: Optional[UserClaims] = None) -> File:
+        file_obj = db.query(File).filter(File.id == file_id).first()
+        if not file_obj:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File or folder not found")
+
+        if current_user:
+            FileService.verify_project_permission(file_obj.project_id, current_user, require_write=True)
+
+        clean_name = new_name.strip()
+        if not clean_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name cannot be empty")
+        if "/" in clean_name or "\\" in clean_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name cannot contain path separators")
+        if clean_name in (".", ".."):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid name")
+
+        if clean_name == file_obj.name:
+            return file_obj
+
+        # Compute new path
+        if file_obj.parent_id:
+            parent = db.query(File).filter(File.id == file_obj.parent_id).first()
+            if parent:
+                new_path = f"{parent.path}/{clean_name}"
+            else:
+                new_path = clean_name
+        else:
+            new_path = clean_name
+
+        # Check if an item already exists with this new path in the project
+        existing = db.query(File).filter(
+            File.project_id == file_obj.project_id,
+            File.path == new_path
+        ).first()
+        if existing and existing.id != file_obj.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"An item named '{clean_name}' already exists in this folder"
+            )
+
+        old_path = file_obj.path
+
+        if file_obj.type == "file":
+            new_s3_key = f"projects/{file_obj.project_id}/{new_path}"
+            if file_obj.s3_key:
+                try:
+                    content = storage_manager.get_file(file_obj.s3_key)
+                    storage_manager.save_file(new_s3_key, content)
+                    storage_manager.delete_file(file_obj.s3_key)
+                except Exception as e:
+                    print(f"Warning: storage rename issue: {e}")
+            file_obj.s3_key = new_s3_key
+            file_obj.name = clean_name
+            file_obj.path = new_path
+            db.commit()
+            db.refresh(file_obj)
+            return file_obj
+
+        # If it's a folder, rename folder and all descendants
+        file_obj.name = clean_name
+        file_obj.path = new_path
+
+        # Update all descendants whose paths start with old_path + "/"
+        descendants = db.query(File).filter(
+            File.project_id == file_obj.project_id,
+            File.path.like(f"{old_path}/%")
+        ).all()
+
+        for desc in descendants:
+            suffix = desc.path[len(old_path):]
+            desc_new_path = f"{new_path}{suffix}"
+            if desc.type == "file" and desc.s3_key:
+                desc_new_s3_key = f"projects/{desc.project_id}/{desc_new_path}"
+                try:
+                    content = storage_manager.get_file(desc.s3_key)
+                    storage_manager.save_file(desc_new_s3_key, content)
+                    storage_manager.delete_file(desc.s3_key)
+                    desc.s3_key = desc_new_s3_key
+                except Exception as e:
+                    print(f"Warning: storage rename issue for descendant {desc.id}: {e}")
+            desc.path = desc_new_path
+
+        db.commit()
+        db.refresh(file_obj)
+        return file_obj
+
+    @staticmethod
     def initialize_starter_files(db: Session, project_id: str, language: str, project_name: str, description: Optional[str] = ""):
         lang = language.lower()
         template_info = STARTER_TEMPLATES.get(lang, STARTER_TEMPLATES["python"])

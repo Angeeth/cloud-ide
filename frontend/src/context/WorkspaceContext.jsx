@@ -343,6 +343,34 @@ export function WorkspaceProvider({ children }) {
     }
   };
 
+  const renameFile = async (fileId, newName) => {
+    try {
+      const res = await api.put(`/files/${fileId}/rename`, { name: newName });
+      await refreshFilesTree(true);
+
+      // Update activeFile and openTabs if the renamed file is open
+      setOpenTabs((prev) =>
+        prev.map((tab) => {
+          if (tab.id === fileId) {
+            return { ...tab, name: newName, path: res.data.path || tab.path };
+          }
+          return tab;
+        })
+      );
+      setActiveFile((prev) => {
+        if (prev && prev.id === fileId) {
+          return { ...prev, name: newName, path: res.data.path || prev.path };
+        }
+        return prev;
+      });
+
+      return res.data;
+    } catch (err) {
+      console.error('Failed to rename file', err);
+      throw err;
+    }
+  };
+
   const runCode = async () => {
     if (!project) return;
     setIsExecuting(true);
@@ -501,6 +529,7 @@ export function WorkspaceProvider({ children }) {
       closeTab,
       updateFileContent,
       saveCurrentFile,
+      renameFile,
       runCode,
       connectWebSockets,
       disconnectWebSockets,
