@@ -263,12 +263,26 @@ select.input-field option:checked {
 
 /* ==================== Real-Time Collaborator Cursor Pipe ==================== */
 .remote-cursor-pipe {
-  border-left-width: 2px !important;
+  border-left-width: 2.5px !important;
+  display: inline-block !important;
+  height: 100% !important;
   border-left-style: solid !important;
   margin-left: -1px !important;
   position: relative !important;
   z-index: 50 !important;
-  animation: remote-cursor-blink 1s step-end infinite !important;
+  animation: remote-cursor-blink 1.2s ease-in-out infinite !important;
+}
+
+.remote-cursor-pipe::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: inherit;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
 }
 
 @keyframes remote-cursor-blink {
@@ -281,14 +295,14 @@ select.input-field option:checked {
 }
 
 /* Caret colors */
-.remote-cursor-purple { border-left-color: #c084fc !important; }
-.remote-cursor-cyan { border-left-color: #38bdf8 !important; }
-.remote-cursor-emerald { border-left-color: #34d399 !important; }
-.remote-cursor-amber { border-left-color: #fbbf24 !important; }
-.remote-cursor-rose { border-left-color: #fb7185 !important; }
-.remote-cursor-indigo { border-left-color: #818cf8 !important; }
-.remote-cursor-orange { border-left-color: #fb923c !important; }
-.remote-cursor-teal { border-left-color: #2dd4bf !important; }
+.remote-cursor-purple { border-left-color: #c084fc !important; background-color: #c084fc !important; }
+.remote-cursor-cyan { border-left-color: #38bdf8 !important; background-color: #38bdf8 !important; }
+.remote-cursor-emerald { border-left-color: #34d399 !important; background-color: #34d399 !important; }
+.remote-cursor-amber { border-left-color: #fbbf24 !important; background-color: #fbbf24 !important; }
+.remote-cursor-rose { border-left-color: #fb7185 !important; background-color: #fb7185 !important; }
+.remote-cursor-indigo { border-left-color: #818cf8 !important; background-color: #818cf8 !important; }
+.remote-cursor-orange { border-left-color: #fb923c !important; background-color: #fb923c !important; }
+.remote-cursor-teal { border-left-color: #2dd4bf !important; background-color: #2dd4bf !important; }
 
 /* Subtle Selection highlights */
 .remote-selection-purple { background-color: rgba(168, 85, 247, 0.25) !important; }

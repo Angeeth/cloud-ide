@@ -44,6 +44,7 @@ export function WorkspaceProvider({ children }) {
   const openTabsRef = useRef(openTabs);
   const activeFileRef = useRef(activeFile);
   const projectRef = useRef(project);
+  const clientIdRef = useRef('client_' + Math.random().toString(36).substring(2, 10));
 
   useEffect(() => {
     openTabsRef.current = openTabs;
@@ -322,7 +323,8 @@ export function WorkspaceProvider({ children }) {
       collaborationWs.current.send(JSON.stringify({
         type: 'file_change',
         file_id: fileId,
-        content: newContent
+        content: newContent,
+        client_id: clientIdRef.current
       }));
     }
   };
@@ -430,9 +432,10 @@ export function WorkspaceProvider({ children }) {
           return changed ? next : prev;
         });
       } else if (data.type === 'cursor_position') {
+        if (data.client_id && data.client_id === clientIdRef.current) return;
         setRemoteCursors((prev) => ({
           ...prev,
-          [data.sender_id]: {
+          [data.client_id || data.sender_id]: {
             fileId: data.file_id,
             position: data.position,
             selection: data.selection,
@@ -442,6 +445,7 @@ export function WorkspaceProvider({ children }) {
           }
         }));
       } else if (data.type === 'file_change') {
+        if (data.client_id && data.client_id === clientIdRef.current) return;
         setFileContents((prev) => ({
           ...prev,
           [data.file_id]: data.content
@@ -498,7 +502,8 @@ export function WorkspaceProvider({ children }) {
         type: 'cursor_position',
         file_id: fileId,
         position: position,
-        selection: selection
+        selection: selection,
+        client_id: clientIdRef.current
       }));
     }
   }, []);
@@ -534,7 +539,8 @@ export function WorkspaceProvider({ children }) {
       connectWebSockets,
       disconnectWebSockets,
       sendChatMessage,
-      broadcastCursorPosition
+      broadcastCursorPosition,
+      clientId: clientIdRef.current
     }}>
       {children}
     </WorkspaceContext.Provider>

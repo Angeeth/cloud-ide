@@ -54,7 +54,8 @@ async def collaboration_websocket(
                     "file_id": data.get("file_id"),
                     "content": data.get("content"),
                     "sender_id": user_id,
-                    "sender_name": user_name
+                    "sender_name": user_name,
+                    "client_id": data.get("client_id")
                 }
                 await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
 
@@ -66,7 +67,8 @@ async def collaboration_websocket(
                     "position": data.get("position"),
                     "selection": data.get("selection"),
                     "sender_id": user_id,
-                    "sender_name": user_name
+                    "sender_name": user_name,
+                    "client_id": data.get("client_id")
                 }
                 await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
 
@@ -81,7 +83,8 @@ async def collaboration_websocket(
                 broadcast_data = {
                     "type": "tree_update",
                     "sender_id": user_id,
-                    "sender_name": user_name
+                    "sender_name": user_name,
+                    "client_id": data.get("client_id")
                 }
                 await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
 
@@ -90,7 +93,8 @@ async def collaboration_websocket(
                 broadcast_data = {
                     "type": "history_update",
                     "sender_id": user_id,
-                    "sender_name": user_name
+                    "sender_name": user_name,
+                    "client_id": data.get("client_id")
                 }
                 await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
 
@@ -100,7 +104,8 @@ async def collaboration_websocket(
                     "type": "version_restored",
                     "version_number": data.get("version_number"),
                     "sender_id": user_id,
-                    "sender_name": user_name
+                    "sender_name": user_name,
+                    "client_id": data.get("client_id")
                 }
                 await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
 
@@ -110,7 +115,8 @@ async def collaboration_websocket(
                     "type": "project_update",
                     "project_name": data.get("project_name"),
                     "sender_id": user_id,
-                    "sender_name": user_name
+                    "sender_name": user_name,
+                    "client_id": data.get("client_id")
                 }
                 await manager.broadcast_to_project_collaboration(project_id, broadcast_data, sender_socket=websocket)
 
