@@ -32,6 +32,7 @@ export function WorkspaceProvider({ children }) {
   const [unsavedFiles, setUnsavedFiles] = useState(new Set());
   const [historyList, setHistoryList] = useState([]);
   const [remoteCursors, setRemoteCursors] = useState({});
+  const [lastRemoteChange, setLastRemoteChange] = useState(null);
   
   const [executionOutput, setExecutionOutput] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -66,6 +67,7 @@ export function WorkspaceProvider({ children }) {
       setFileContents({});
       setHistoryList([]);
       setRemoteCursors({});
+      setLastRemoteChange(null);
 
       const [projRes, filesRes, chatRes, historyRes] = await Promise.all([
         api.get(`/projects/${projectId}`),
@@ -312,7 +314,7 @@ export function WorkspaceProvider({ children }) {
     });
   };
 
-  const updateFileContent = (fileId, newContent, broadcast = true) => {
+  const updateFileContent = (fileId, newContent, broadcast = true, changes = null) => {
     setFileContents((prev) => ({
       ...prev,
       [fileId]: newContent
@@ -324,6 +326,7 @@ export function WorkspaceProvider({ children }) {
         type: 'file_change',
         file_id: fileId,
         content: newContent,
+        changes: changes,
         client_id: clientIdRef.current
       }));
     }
@@ -450,6 +453,13 @@ export function WorkspaceProvider({ children }) {
           ...prev,
           [data.file_id]: data.content
         }));
+        setLastRemoteChange({
+          fileId: data.file_id,
+          changes: data.changes,
+          content: data.content,
+          clientId: data.client_id,
+          timestamp: Date.now() + Math.random()
+        });
       } else if (data.type === 'tree_update') {
         refreshFilesTree(false, projectId);
       } else if (data.type === 'history_update') {
@@ -518,6 +528,7 @@ export function WorkspaceProvider({ children }) {
       unsavedFiles,
       historyList,
       remoteCursors,
+      lastRemoteChange,
       executionOutput,
       isExecuting,
       presenceList,

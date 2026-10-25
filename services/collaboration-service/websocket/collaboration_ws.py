@@ -53,6 +53,7 @@ async def collaboration_websocket(
                     "type": "file_change",
                     "file_id": data.get("file_id"),
                     "content": data.get("content"),
+                    "changes": data.get("changes"),
                     "sender_id": user_id,
                     "sender_name": user_name,
                     "client_id": data.get("client_id")
